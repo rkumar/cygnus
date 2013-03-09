@@ -1,0 +1,112 @@
+#!/usr/bin/env ruby
+# ----------------------------------------------------------------------------- #
+#         File: cygnus
+#  Description: A class that displays text using a pad.
+#         The motivation for this is to put formatted text and not care about truncating and 
+#         stuff. Also, there will be only one write, not each time scrolling happens.
+#         I found textview code for repaint being more complex than required.
+#       Author: rkumar http://github.com/rkumar/mancurses/
+#         Date: 2011-11-09 - 16:59
+#      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
+#  Last update: 2013-03-09 20:28
+#
+#  == CHANGES
+#  == TODO 
+#     _ when pressing space and going down there's some mixup, try license, i think
+#      i knocked off some code reg maxcols.
+#
+#     when moving right, also don't pan straight away
+#     x add mappings and process key in handle_keys and other widget things
+#     x user can put text or list
+#     . handle putting data again and overwriting existing
+#     . formatted text
+#     x search and other features
+#     - can pad movement and other ops be abstracted into module for reuse
+#     / get scrolling like in vim (C-f e y b d)
+#     - alert issue of leaving a blank is poss due to using prefresh i/o copywin
+#
+#   == TODO 2013-03-07 - 20:34 
+#   _ key bindings not showing up -- bind properly
+#   _ F1 screen leaves everything blank, so does bindings
+# ----------------------------------------------------------------------------- #
+#
+require 'rbcurse'
+require 'cygnus/textpad'
+require 'rbcurse/core/util/app'
+require 'fileutils'
+
+def get_dirs
+  text = Dir.entries "."
+  text.delete_at 0
+  text.collect! { |x| 
+    if File.directory? x
+      x + "/"
+    else
+      x
+    end
+  }
+end
+  class DirRenderer
+    def render pad, lineno, text
+      bg = :black
+      fg = :white
+      att = NORMAL
+      cp = $datacolor
+      if text[-1] == "/"
+        fg = :red
+        cp = get_color($datacolor, fg, bg)
+      end
+      FFI::NCurses.wattron(pad,FFI::NCurses.COLOR_PAIR(cp) | att)
+      FFI::NCurses.mvwaddstr(pad, lineno, 0, text)
+      FFI::NCurses.wattroff(pad,FFI::NCurses.COLOR_PAIR(cp) | att)
+
+    end # def
+  end # class
+
+  App.new do
+    @form.bind_key(?\M-c, "Ask program name: ") { ask_program }
+    @form.bind_key(?q, "quit: ") { throw :close }
+    single = false
+    w = 20
+    w2 = FFI::NCurses.COLS-w-1
+    if single
+      w = FFI::NCurses.COLS-1
+    end
+    title = File.basename(Dir.pwd)
+    ## create two side by side pads on for ansi and one for ruby
+    p = Cygnus::TextPad.new @form, :height => FFI::NCurses.LINES-1, :width => w, :row => 0, :col => 0 , :title => title, :name => "dirlist"
+    p.renderer DirRenderer.new
+
+    p.bind(:PRESS) do |aev|
+      tv = @form.by_name["tv"]
+      o = aev.source
+      filename = aev.text
+      if File.directory? filename
+        FileUtils.cd filename
+        p.title(File.basename(Dir.pwd))
+        text = get_dirs
+        o.text(text)
+      else
+        tv.title = filename
+        tv.filename(filename)
+      end
+    end
+
+    #text = Dir.glob("*")
+    text = get_dirs
+    #text.insert 0, ".."
+    p.text(text)
+    if !single
+      t = Cygnus::TextPad.new @form, :filename => "bin/cygnus", :height => FFI::NCurses.LINES-1, :width => w2, :row => 0, :col => w+1 , :title => " ruby ", :name => "tv"
+    end
+    #t.text(text)
+    t.bind(:PRESS) do |aev|
+      alert "Press got #{aev.curpos}, #{aev.current_index}, #{aev.text}"
+    end
+    #throw :close
+      @status_line = status_line :row => Ncurses.LINES-1
+
+      @status_line.command {
+        "q Quit | ? Keys | M-c Program |  " 
+      }
+  end
