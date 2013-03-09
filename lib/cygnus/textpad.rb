@@ -8,11 +8,12 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-09 20:58
+#  Last update: 2013-03-10 01:17
 #
 #  == CHANGES
 #  == TODO 
-#     _ handle putting data again and overwriting existing
+#     _ The list one needs a f-char like functionality.
+#     . handle putting data again and overwriting existing
 #       When reputting data, the underlying pad needs to be properly cleared
 #       esp last row and last col
 #
@@ -101,7 +102,7 @@ module Cygnus
     def populate_pad
       @_populate_needed = false
       # how can we make this more sensible ? FIXME
-      @renderer ||= DefaultRubyRenderer.new if ".rb" == @filetype
+      @renderer ||= DefaultRubyRenderer.new #if ".rb" == @filetype
       @content_rows = @content.count
       @content_cols = content_cols()
       @content_rows = @rows if @content_rows < @rows
@@ -147,6 +148,10 @@ module Cygnus
 
     def filename(filename)
       @file = filename
+      unless File.exists? filename
+        alert "#{filename} does not exist"
+        return
+      end
       @filetype = File.extname filename
       @content = File.open(filename,"r").readlines
       if @filetype == ""
@@ -688,7 +693,8 @@ module Cygnus
     end
     ## 
     # Ensure current row is visible, if not make it first row
-    # TODO - need to check if its at end and then reduce scroll at rows, 
+    # NOTE - need to check if its at end and then reduce scroll at rows, check_prow does that
+    # 
     # @param current_index (default if not given)
     #
     def ensure_visible row = @current_index
@@ -745,7 +751,7 @@ module Cygnus
       elsif text =~ /^\s*(class |module ) /
         fg = :magenta
         cp = get_color($datacolor, fg, bg)
-      elsif text =~ /^\s*def /
+      elsif text =~ /^\s*def / || text =~ /^\s*function /
         fg = :yellow
         att = BOLD
         cp = get_color($datacolor, fg, bg)
@@ -753,6 +759,11 @@ module Cygnus
         fg = :magenta
         att = BOLD
         cp = get_color($datacolor, fg, bg)
+      elsif text =~ /^\s*=/
+        fg = :blue
+        bg = :white
+        cp = get_color($datacolor, fg, bg)
+        att = REVERSE
       end
       FFI::NCurses.wattron(pad,FFI::NCurses.COLOR_PAIR(cp) | att)
       FFI::NCurses.mvwaddstr(pad, lineno, 0, text)
