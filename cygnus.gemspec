@@ -7,10 +7,10 @@ Gem::Specification.new do |spec|
   spec.name          = "cygnus"
   spec.version       = Cygnus::VERSION
   spec.authors       = ["Rahul Kumar"]
-  spec.email         = ["rahulbenegal@gmail.com"]
-  spec.description   = %q{TODO: Write a gem description}
-  spec.summary       = %q{TODO: Write a gem summary}
-  spec.homepage      = ""
+  spec.email         = ["sentinel1879@gmail.com"]
+  spec.description   = %q{best code browser eva}
+  spec.summary       = %q{the finest code browser with exactly what you need and no more}
+  spec.homepage      = "https://github.com/rkumar/cygnus"
   spec.license       = "MIT"
 
   spec.files         = `git ls-files`.split($/)
