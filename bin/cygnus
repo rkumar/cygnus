@@ -8,12 +8,15 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-09 20:28
+#  Last update: 2013-03-10 01:35
 #
 #  == CHANGES
 #  == TODO 
-#     _ when pressing space and going down there's some mixup, try license, i think
-#      i knocked off some code reg maxcols.
+#
+#     _ use same keys as cetus for parent pop etc , . ' etc maybe even backtick for menu
+#     _ goto_dir
+#     _ jump to single pane and back.
+#
 #
 #     when moving right, also don't pan straight away
 #     x add mappings and process key in handle_keys and other widget things
@@ -35,26 +38,28 @@ require 'cygnus/textpad'
 require 'rbcurse/core/util/app'
 require 'fileutils'
 
-def get_dirs
-  text = Dir.entries "."
-  text.delete_at 0
-  text.collect! { |x| 
-    if File.directory? x
-      x + "/"
-    else
-      x
-    end
-  }
-end
+
   class DirRenderer
     def render pad, lineno, text
       bg = :black
       fg = :white
       att = NORMAL
       cp = $datacolor
-      if text[-1] == "/"
+      if File.directory? text
         fg = :red
+        text << "/"
         cp = get_color($datacolor, fg, bg)
+      elsif File.symlink? text
+        fg = :magenta
+        #text << "->"
+        text = text + "->"
+        cp = get_color($datacolor, fg, bg)
+      elsif File.executable? text
+        fg = :yellow
+        #text << "*"
+        text = text + "*"
+        cp = get_color($datacolor, fg, bg)
+      else
       end
       FFI::NCurses.wattron(pad,FFI::NCurses.COLOR_PAIR(cp) | att)
       FFI::NCurses.mvwaddstr(pad, lineno, 0, text)
@@ -64,16 +69,50 @@ end
   end # class
 
   App.new do
-    @form.bind_key(?\M-c, "Ask program name: ") { ask_program }
+    @dir_stack = []
+    def change_dir filename
+      @dir_stack << Dir.pwd unless @dir_stack.include? Dir.pwd
+      FileUtils.cd filename
+      display_dir
+    end
+    def display_dir
+      p = @form.by_name["dirlist"]
+      p.title(File.basename(Dir.pwd))
+      text = get_dirs
+      p.text(text)
+    end
+    def get_dirs
+      text = Dir.entries "."
+      text.delete_at 0
+      return text
+    end
+    def goto_parent_dir
+      change_dir ".."
+    end
+    def pop_dir
+      d = @dir_stack.pop
+      return unless d
+      FileUtils.cd d
+      display_dir
+    end
+    def goto_dir
+      dir = get_string "Enter directory to go to "
+      return if dir.nil? || dir == ""
+      dir = File.expand_path dir
+      if File.directory? dir
+        change_dir dir
+      else
+        alert "#{dir} not a directory"
+      end
+    end
     @form.bind_key(?q, "quit: ") { throw :close }
-    single = false
+    @form.bind_key(?,, "goto_parent_dir") { goto_parent_dir }
+    @form.bind_key(?., "pop_dir") { pop_dir }
+    @form.bind_key(?+, "goto_dir") { goto_dir }
     w = 20
     w2 = FFI::NCurses.COLS-w-1
-    if single
-      w = FFI::NCurses.COLS-1
-    end
     title = File.basename(Dir.pwd)
-    ## create two side by side pads on for ansi and one for ruby
+    
     p = Cygnus::TextPad.new @form, :height => FFI::NCurses.LINES-1, :width => w, :row => 0, :col => 0 , :title => title, :name => "dirlist"
     p.renderer DirRenderer.new
 
@@ -82,31 +121,24 @@ end
       o = aev.source
       filename = aev.text
       if File.directory? filename
-        FileUtils.cd filename
-        p.title(File.basename(Dir.pwd))
-        text = get_dirs
-        o.text(text)
+        change_dir filename
       else
         tv.title = filename
         tv.filename(filename)
       end
     end
 
-    #text = Dir.glob("*")
     text = get_dirs
-    #text.insert 0, ".."
     p.text(text)
-    if !single
-      t = Cygnus::TextPad.new @form, :filename => "bin/cygnus", :height => FFI::NCurses.LINES-1, :width => w2, :row => 0, :col => w+1 , :title => " ruby ", :name => "tv"
-    end
-    #t.text(text)
+
+    t = Cygnus::TextPad.new @form, :height => FFI::NCurses.LINES-1, :width => w2+2, :row => 0, :col => w-1 , :title => " ruby ", :name => "tv"
     t.bind(:PRESS) do |aev|
       alert "Press got #{aev.curpos}, #{aev.current_index}, #{aev.text}"
     end
-    #throw :close
-      @status_line = status_line :row => Ncurses.LINES-1
 
-      @status_line.command {
-        "q Quit | ? Keys | M-c Program |  " 
-      }
+    @status_line = status_line :row => Ncurses.LINES-1
+
+    @status_line.command {
+      "q Quit | ? Keys " 
+    }
   end
