@@ -8,7 +8,7 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-10 17:51
+#  Last update: 2013-03-10 22:39
 #
 #  == CHANGES
 #  == TODO 
@@ -35,6 +35,7 @@ module Cygnus
     include BorderTitle
 
     dsl_accessor :suppress_border
+    attr_reader :current_index
     # You may pass height, width, row and col for creating a window otherwise a fullscreen window
     # will be created. If you pass a window from caller then that window will be used.
     # Some keys are trapped, jkhl space, pgup, pgdown, end, home, t b
@@ -174,6 +175,10 @@ module Cygnus
       @repaint_all = true
       init_vars
     end
+    def content
+      raise "content is nil " unless @content
+      return @content
+    end
 
     ## ---- the next 2 methods deal with printing chunks
     # we should put it int a common module and include it
@@ -300,7 +305,8 @@ module Cygnus
       bind_key(?\C-y, "Scroll Window Up"){ scroll_window_up } 
       bind_keys([32,338, ?\C-d], "Scroll Forward"){ scroll_forward } 
       bind_keys([?\C-b,339]){ scroll_backward } 
-      bind_key([?',?']){ goto_last_position } # vim , goto last row position (not column)
+      # the next one invalidates the single-quote binding for bookmarks
+      #bind_key([?',?']){ goto_last_position } # vim , goto last row position (not column)
       bind_key(?/, :ask_search)
       bind_key(?n, :find_more)
       bind_key([?\C-x, ?>], :scroll_right)
@@ -319,7 +325,7 @@ module Cygnus
       #@oldindex = @current_index
       $multiplier ||= 0
       if $multiplier > 0
-        goto_line $multiplier
+        goto_line $multiplier - 1
         return
       end
       @current_index = 0
@@ -333,7 +339,7 @@ module Cygnus
       #@oldindex = @current_index
       $multiplier ||= 0
       if $multiplier > 0
-        goto_line $multiplier
+        goto_line $multiplier - 1
         return
       end
       @current_index = @content.count() - 1
@@ -342,9 +348,10 @@ module Cygnus
     end
     def goto_line line
       ## we may need to calculate page, zfm style and place at right position for ensure visible
-      line -= 1
+      #line -= 1
       @current_index = line
       ensure_visible line
+      bounds_check
       $multiplier = 0
     end
     def top_of_window
@@ -524,6 +531,9 @@ module Cygnus
           ## NOTE if textpad does not handle the event and it goes to form which pops
           # up a messagebox, then padrefresh does not happen, since control does not 
           # come back here, so a black rect is left on screen
+          # please note that a bounds check will not happen for stuff that 
+          # is triggered by form, so you'll have to to it yourself or 
+          # call setrowcol explicity if the cursor is not updated
           return :UNHANDLED if ret == :UNHANDLED
         end
       rescue => err
