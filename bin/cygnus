@@ -8,10 +8,12 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-10 18:09
+#  Last update: 2013-03-10 22:36
 #
 #  == CHANGES
 #  == BUGS
+#     _ single quote not triggering or finding event, although it is bound.
+#     _ when changing dirs , old crow is left, should be first, or previously used.
 #     _ unable to display a file with very long lines.
 #
 #  == TODO 
@@ -77,11 +79,89 @@ require 'fileutils'
   end # class
 
   App.new do
+    $bookmarks = {}
+    $cursor = 0
+    ## accept a character to save this dir as a bookmark
+    def create_bookmark
+      ch = get_string "Enter A to Z or 0-9 for bookmark: "
+      return if ch.nil? || ch == ""
+      #ch = @window.get_char
+      if ch =~ /^[0-9A-Z]$/
+        #$bookmarks[ch] = "#{Dir.pwd}:#{$cursor}"
+        $bookmarks[ch] = $current_file
+        $modified = true
+      else
+        alert "Bookmark must be upper-case character or number."
+      end
+    end
+    def goto_bookmark ch=nil
+      unless ch
+        #ch = get_string "Enter bookmark char: "
+        ch = @window.getchar().chr
+        return if ch.nil? || ch == ""
+      end
+      if ch =~ /^[0-9A-Z]$/
+        d = $bookmarks[ch]
+        if d
+          filename = File.basename(d)
+          dir = File.dirname(d)
+          change_dir dir, filename
+        else
+          alert "#{ch} not a bookmark"
+        end
+      else
+        # goto_entry_starting_with ch
+        file_starting_with ch
+      end
+    end
+    def file_starting_with fc
+      ix = return_next_match(method(:file_matching?), "^#{fc}")
+      if ix
+        #alert "Got match for #{fc} : #{ix}"
+        $view.goto_line ix
+      else
+        alert "Got no match for #{fc}"
+      end
+    end
+    def file_matching? file, patt
+      # WARN crashes with [ or other characters
+      file =~ /#{patt}/
+    end
+    def filelist
+      tv = @form.by_name["dirlist"]
+      return tv.content()
+    end
+
+    ## generic method to take cursor to next position for a given condition
+    def return_next_match binding, *args
+      first = nil
+      ix = 0
+      filelist().each_with_index do |elem,ii|
+        if binding.call(elem.to_s, *args)
+          first ||= ii
+          if ii > $cursor 
+            ix = ii
+            break
+          end
+        end
+      end
+      return first if ix == 0
+      return ix
+    end
     @dir_stack = []
-    def change_dir filename
+    def change_dir dir, filename=nil
       @dir_stack << Dir.pwd unless @dir_stack.include? Dir.pwd
-      FileUtils.cd filename
+      FileUtils.cd dir
       display_dir
+      # TODO also position cursor on file if passed
+      display_file filename if filename
+    end
+    def display_file filename
+      tv = @form.by_name["tv"]
+      tv.title = filename
+      tv.filename(filename)
+      tv.text(get_file_contents(filename))
+      $viewed_file = filename
     end
     def display_dir
       p = @form.by_name["dirlist"]
@@ -150,28 +230,30 @@ require 'fileutils'
     @form.bind_key(?,, "goto_parent_dir") { goto_parent_dir }
     @form.bind_key(?., "pop_dir") { pop_dir }
     @form.bind_key(?+, "goto_dir") { goto_dir }
+    @form.bind_key(?m, "create_bookmark") { create_bookmark }
+    @form.bind_key(?', "goto_bookmark") { goto_bookmark }
     w = 20
     w2 = FFI::NCurses.COLS-w-1
     title = File.basename(Dir.pwd)
     
     p = Cygnus::TextPad.new @form, :height => FFI::NCurses.LINES-1, :width => w, :row => 0, :col => 0 , :title => title, :name => "dirlist"
     p.renderer DirRenderer.new
+    $view = p
 
     p.bind(:PRESS) do |aev|
-      tv = @form.by_name["tv"]
       o = aev.source
       filename = aev.text
       if File.directory? filename
         change_dir filename
       else
-        tv.title = filename
-        tv.filename(filename)
-        tv.text(get_file_contents(filename))
+        display_file filename
       end
     end
     p.bind(:ENTER_ROW) do |aev|
       filename = aev.text
+      $current_file = "#{Dir.pwd}/#{filename}"
       st = File.stat(filename)
+      $cursor = aev.current_index
       $message.value = "%20s %10s %s" % [ st.mtime, st.size, filename ]
     end
 
@@ -179,6 +261,7 @@ require 'fileutils'
     p.text(text)
 
     t = Cygnus::TextPad.new @form, :height => FFI::NCurses.LINES-1, :width => w2+2, :row => 0, :col => w-1 , :title => " ruby ", :name => "tv"
+    $tv = t
     t.bind(:PRESS) do |aev|
       alert "Press got #{aev.curpos}, #{aev.current_index}, #{aev.text}"
     end
