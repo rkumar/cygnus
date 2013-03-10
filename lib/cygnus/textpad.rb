@@ -8,7 +8,7 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-10 01:17
+#  Last update: 2013-03-10 17:51
 #
 #  == CHANGES
 #  == TODO 
@@ -316,7 +316,7 @@ module Cygnus
 
     # goto first line of file
     def goto_start
-      @oldindex = @current_index
+      #@oldindex = @current_index
       $multiplier ||= 0
       if $multiplier > 0
         goto_line $multiplier
@@ -330,7 +330,7 @@ module Cygnus
 
     # goto last line of file
     def goto_end
-      @oldindex = @current_index
+      #@oldindex = @current_index
       $multiplier ||= 0
       if $multiplier > 0
         goto_line $multiplier
@@ -342,6 +342,7 @@ module Cygnus
     end
     def goto_line line
       ## we may need to calculate page, zfm style and place at right position for ensure visible
+      line -= 1
       @current_index = line
       ensure_visible line
       $multiplier = 0
@@ -370,7 +371,7 @@ module Cygnus
     # move down a line mimicking vim's j key
     # @param [int] multiplier entered prior to invoking key
     def down num=(($multiplier.nil? or $multiplier == 0) ? 1 : $multiplier)
-      @oldindex = @current_index if num > 10
+      #@oldindex = @current_index if num > 10
       @current_index += num
       ensure_visible
       $multiplier = 0
@@ -379,7 +380,7 @@ module Cygnus
     # move up a line mimicking vim's k key
     # @param [int] multiplier entered prior to invoking key
     def up num=(($multiplier.nil? or $multiplier == 0) ? 1 : $multiplier)
-      @oldindex = @current_index if num > 10
+      #@oldindex = @current_index if num > 10
       @current_index -= num
       #unless is_visible? @current_index
         #if @prow > @current_index
@@ -415,7 +416,7 @@ module Cygnus
 
     # scrolls lines a window full at a time, on pressing ENTER or C-d or pagedown
     def scroll_forward
-      @oldindex = @current_index
+      #@oldindex = @current_index
       @current_index += @scrollatrows
       @prow = @current_index - @scrollatrows
     end
@@ -423,7 +424,7 @@ module Cygnus
     # scrolls lines backward a window full at a time, on pressing pageup 
     # C-u may not work since it is trapped by form earlier. Need to fix
     def scroll_backward
-      @oldindex = @current_index
+      #@oldindex = @current_index
       @current_index -= @scrollatrows
       @prow = @current_index - @scrollatrows
     end
@@ -546,9 +547,12 @@ module Cygnus
     def current_value
       @content[@current_index]
     end
-    # ??? UPDATE THIS called by listscrollable, used by scrollbar ENTER_ROW
+    # 
     def on_enter_row arow
-      fire_handler :ENTER_ROW, self
+      return if @content.nil? || @content.size == 0
+      require 'rbcurse/core/include/ractionevent'
+      aev = TextActionEvent.new self, :ENTER_ROW, current_value().to_s, @current_index, @curpos
+      fire_handler :ENTER_ROW, aev
       @repaint_required = true
     end
 
@@ -604,7 +608,12 @@ module Cygnus
       @crow = @row + @height -2 if @crow >= r + @height -2
       setrowcol @crow, @curpos+c
       lastcurpos @crow, @curpos+c
+      if @oldindex != @current_index
+        on_enter_row @current_index
+        @oldindex = @current_index
+      end
       if @oldrow != @prow || @oldcol != @pcol
+        # only if scrolling has happened.
         @repaint_required = true
       end
     end
@@ -654,7 +663,7 @@ module Cygnus
       return unless ix
       @last_regex = str
 
-      @oldindex = @current_index
+      #@oldindex = @current_index
       @current_index = ix[0]
       @curpos = ix[1]
       ensure_visible
@@ -666,7 +675,7 @@ module Cygnus
       return unless @last_regex
       ix = next_match @last_regex
       return unless ix
-      @oldindex = @current_index
+      #@oldindex = @current_index
       @current_index = ix[0]
       @curpos = ix[1]
       ensure_visible
@@ -744,22 +753,25 @@ module Cygnus
       cp = $datacolor
       if text =~ /^\s*# / || text =~ /^\s*## /
         fg = :red
+        #att = BOLD
         cp = get_color($datacolor, fg, bg)
       elsif text =~ /^\s*#/
         fg = :blue
         cp = get_color($datacolor, fg, bg)
-      elsif text =~ /^\s*(class |module ) /
-        fg = :magenta
+      elsif text =~ /^\s*(class|module) /
+        fg = :cyan
+        att = BOLD
         cp = get_color($datacolor, fg, bg)
       elsif text =~ /^\s*def / || text =~ /^\s*function /
         fg = :yellow
         att = BOLD
         cp = get_color($datacolor, fg, bg)
-      elsif text =~ /^\s*(begin|rescue|ensure|end|if |include |extend |while |case )/
+      elsif text =~ /^\s*(end|if |elsif|else|begin|rescue|ensure|include|extend|while|unless|case |when )/
         fg = :magenta
         att = BOLD
         cp = get_color($datacolor, fg, bg)
       elsif text =~ /^\s*=/
+        # rdoc case
         fg = :blue
         bg = :white
         cp = get_color($datacolor, fg, bg)
