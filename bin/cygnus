@@ -8,9 +8,12 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-10 01:35
+#  Last update: 2013-03-10 18:09
 #
 #  == CHANGES
+#  == BUGS
+#     _ unable to display a file with very long lines.
+#
 #  == TODO 
 #
 #     _ use same keys as cetus for parent pop etc , . ' etc maybe even backtick for menu
@@ -46,7 +49,8 @@ require 'fileutils'
       att = NORMAL
       cp = $datacolor
       if File.directory? text
-        fg = :red
+        fg = :blue
+        att = BOLD
         text << "/"
         cp = get_color($datacolor, fg, bg)
       elsif File.symlink? text
@@ -58,6 +62,10 @@ require 'fileutils'
         fg = :yellow
         #text << "*"
         text = text + "*"
+        cp = get_color($datacolor, fg, bg)
+      elsif text =~ /(~|swp)$/
+        fg = :blue
+        #att = BOLD
         cp = get_color($datacolor, fg, bg)
       else
       end
@@ -105,6 +113,39 @@ require 'fileutils'
         alert "#{dir} not a directory"
       end
     end
+    def filetype f
+      text = `file #{f}`
+      if text.include? "text"
+            $log.debug "XXX:  html file #{text}"
+        return :html if text.include?("HTML")
+        return :text
+      elsif text =~ /(archive|zip)/
+        return :zip
+      else
+        return :unknown
+      end
+    end
+    def get_file_contents f
+      ft = filetype f
+      $log.debug "XXX:  html filetype #{ft}"
+      case ft
+      when :text
+        return File.open(f,"r").readlines
+      when :html
+        $log.debug "XXX:  html inside filetype #{ft}"
+          t = `html2text #{f} 2>&1`.split "\n"
+        $log.debug "XXX:  html after running html2text #{t.first}"
+          if t.first.include? "command not found"
+            $log.debug "XXX:  html command not found #{t}"
+            return File.open(f,"r").readlines
+          end
+          return t
+      when :zip
+        return `tar ztvf #{f}`.split("\n")
+      else
+        return ["unknown type", `file #{f}`]
+      end
+    end
     @form.bind_key(?q, "quit: ") { throw :close }
     @form.bind_key(?,, "goto_parent_dir") { goto_parent_dir }
     @form.bind_key(?., "pop_dir") { pop_dir }
@@ -125,7 +166,13 @@ require 'fileutils'
       else
         tv.title = filename
         tv.filename(filename)
+        tv.text(get_file_contents(filename))
       end
+    end
+    p.bind(:ENTER_ROW) do |aev|
+      filename = aev.text
+      st = File.stat(filename)
+      $message.value = "%20s %10s %s" % [ st.mtime, st.size, filename ]
     end
 
     text = get_dirs
@@ -136,9 +183,11 @@ require 'fileutils'
       alert "Press got #{aev.curpos}, #{aev.current_index}, #{aev.text}"
     end
 
+    $message = Variable.new
+    $message.value = "## File Stat Area ##"
     @status_line = status_line :row => Ncurses.LINES-1
 
     @status_line.command {
-      "q Quit | ? Keys " 
+      "q Quit | ? Keys | %40s" % [$message.value]
     }
   end
