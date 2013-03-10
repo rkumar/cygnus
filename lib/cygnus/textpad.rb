@@ -8,12 +8,12 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-10 22:39
+#  Last update: 2013-03-11 01:01
 #
 #  == CHANGES
 #  == TODO 
 #     _ The list one needs a f-char like functionality.
-#     . handle putting data again and overwriting existing
+#     x handle putting data again and overwriting existing
 #       When reputting data, the underlying pad needs to be properly cleared
 #       esp last row and last col
 #
@@ -106,9 +106,11 @@ module Cygnus
       @renderer ||= DefaultRubyRenderer.new #if ".rb" == @filetype
       @content_rows = @content.count
       @content_cols = content_cols()
+      @title += " [ #{@content_rows},#{@content_cols}] " if @cols > 50
       @content_rows = @rows if @content_rows < @rows
       @content_cols = @cols if @content_cols < @cols
       $log.debug "XXXX content_cols = #{@content_cols}"
+      #@content_cols = 200 if @content_cols > 200 # trying out since some files not displaying
 
       create_pad
 
@@ -760,7 +762,8 @@ module Cygnus
       bg = :black
       fg = :white
       att = NORMAL
-      cp = $datacolor
+      #cp = $datacolor
+      cp = get_color($datacolor, fg, bg)
       if text =~ /^\s*# / || text =~ /^\s*## /
         fg = :red
         #att = BOLD
