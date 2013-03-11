@@ -8,7 +8,7 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-11 01:26
+#  Last update: 2013-03-12 01:03
 #
 #  == CHANGES
 #  == BUGS
@@ -79,6 +79,87 @@ require 'fileutils'
 
     end # def
   end # class
+  def padpopuplist list, config={}, &block
+    raise ArgumentError, "Nil list received by popuplist" unless list
+    require 'cygnus/textpad'
+
+    max_visible_items = config[:max_visible_items]
+    row = config[:row] || 5
+    col = config[:col] || 5
+    relative_to = config[:relative_to]
+    if relative_to
+      layout = relative_to.form.window.layout
+      row += layout[:top]
+      col += layout[:left]
+    end
+    config.delete :relative_to
+    longest = list.max_by(&:length)
+    width = config[:width] || longest.size()+2 # borders take 2
+    if config[:title]
+      width = config[:title].size + 2 if width < config[:title].size
+    end
+    height = config[:height]
+    height ||= [max_visible_items || 10+2, list.length+2].min 
+    #layout(1+height, width+4, row, col) 
+    layout = { :height => 0+height, :width => 0+width, :top => row, :left => col } 
+    window = VER::Window.new(layout)
+    form = RubyCurses::Form.new window
+
+    listconfig = config[:listconfig] || {}
+    listconfig[:list] = list
+    listconfig[:width] = width
+    listconfig[:height] = height
+    #listconfig[:selection_mode] ||= :single
+    listconfig.merge!(config)
+    listconfig.delete(:row); 
+    listconfig.delete(:col); 
+    # trying to pass populists block to listbox
+    #lb = RubyCurses::List.new form, listconfig, &block
+    lb = Cygnus::TextPad.new form, listconfig, &block
+    #lb = Cygnus::TextPad.new form, :height => height, :width => width, :row => 0, :col => 0 , :title => "A title", :name => "popup"
+    lb.text(list)
+    #
+    # added next line so caller can configure listbox with 
+    # events such as ENTER_ROW, LEAVE_ROW or LIST_SELECTION_EVENT or PRESS
+    # 2011-11-11 
+    #yield lb if block_given? # No it won't work since this returns
+    window.bkgd(Ncurses.COLOR_PAIR($reversecolor));
+    window.werase
+    #window.wrefresh
+    #Ncurses::Panel.update_panels
+    #window.wrefresh
+    #lb.padrefresh
+    form.repaint
+    Ncurses::Panel.update_panels
+    begin
+      while((ch = window.getchar()) != 999 )
+        case ch
+        when -1
+          next
+        when ?\C-q.getbyte(0)
+          break
+        else
+          lb.handle_key ch
+          form.repaint
+          if ch == 13 || ch == 10
+            return lb.current_index #if lb.selection_mode != :multiple
+
+#            x = lb.selected_indices
+            return x if x
+            x = lb.current_index unless x
+            return [x]
+            # if multiple selection, then return list of selected_indices and don't catch 32
+          ##elsif ch == 32      # if single selection
+            return lb.current_index #if lb.selection_mode != :multiple
+          end
+          #yield ch if block_given?
+        end
+      end
+    ensure
+      window.destroy  
+    end
+    return nil
+  end
 
   App.new do
     $bookmarks = {}
@@ -231,17 +312,23 @@ require 'fileutils'
         return ["unknown type", `file #{f}`]
       end
     end
+    def show
+      list = get_dirs
+      ix = padpopuplist list, :title => "something", :bgcolor => :blue, :color => :white
+      #alert "Got #{list[ix]}" if ix
+    end
     @form.bind_key(?q, "quit: ") { throw :close }
     @form.bind_key(?,, "goto_parent_dir") { goto_parent_dir }
     @form.bind_key(?., "pop_dir") { pop_dir }
     @form.bind_key(?+, "goto_dir") { goto_dir }
     @form.bind_key(?m, "create_bookmark") { create_bookmark }
     @form.bind_key(?', "goto_bookmark") { goto_bookmark }
+    @form.bind_key(?\M-c, "show") { show }
     w = 20
     w2 = FFI::NCurses.COLS-w-1
     title = File.basename(Dir.pwd)
     
-    p = Cygnus::TextPad.new @form, :height => FFI::NCurses.LINES-1, :width => w, :row => 0, :col => 0 , :title => title, :name => "dirlist"
+    p = Cygnus::TextPad.new @form, :height => FFI::NCurses.LINES-1, :width => w-0, :row => 0, :col => 0 , :title => title, :name => "dirlist"
     p.renderer DirRenderer.new
     $view = p
 
@@ -266,6 +353,7 @@ require 'fileutils'
     p.text(text)
 
     t = Cygnus::TextPad.new @form, :height => FFI::NCurses.LINES-1, :width => w2+2, :row => 0, :col => w-1 , :title => " ruby ", :name => "tv"
+    t.renderer Cygnus::DefaultFileRenderer.new
     $tv = t
     t.bind(:PRESS) do |aev|
       alert "Press got #{aev.curpos}, #{aev.current_index}, #{aev.text}"
