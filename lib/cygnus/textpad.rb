@@ -8,10 +8,11 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-11 01:01
+#  Last update: 2013-03-12 01:44
 #
 #  == CHANGES
 #  == TODO 
+#     _ in popup case allowing scrolling when it should not so you get an extra char at end
 #     _ The list one needs a f-char like functionality.
 #     x handle putting data again and overwriting existing
 #       When reputting data, the underlying pad needs to be properly cleared
@@ -46,6 +47,7 @@ module Cygnus
       @editable = false
       @focusable = true
       @config = config
+      @row = @col = 0
       @prow = @pcol = 0
       @startrow = 0
       @startcol = 0
@@ -92,6 +94,7 @@ module Cygnus
     end
 
     private
+    ## XXX in list text returns the selected row, list returns the full thing, keep consistent
     def create_pad
       destroy if @pad
       #@pad = FFI::NCurses.newpad(@content_rows, @content_cols)
@@ -103,7 +106,7 @@ module Cygnus
     def populate_pad
       @_populate_needed = false
       # how can we make this more sensible ? FIXME
-      @renderer ||= DefaultRubyRenderer.new #if ".rb" == @filetype
+      #@renderer ||= DefaultFileRenderer.new #if ".rb" == @filetype
       @content_rows = @content.count
       @content_cols = content_cols()
       @title += " [ #{@content_rows},#{@content_cols}] " if @cols > 50
@@ -113,6 +116,14 @@ module Cygnus
       #@content_cols = 200 if @content_cols > 200 # trying out since some files not displaying
 
       create_pad
+
+      # clearstring is the string required to clear the pad to backgroud color
+      @clearstring = nil
+      cp = get_color($datacolor, @color, @bgcolor)
+      @cp = FFI::NCurses.COLOR_PAIR(cp)
+      if cp != $datacolor
+        @clearstring ||= " " * @width
+      end
 
       Ncurses::Panel.update_panels
       @content.each_index { |ix|
@@ -142,7 +153,14 @@ module Cygnus
       if @renderer
         @renderer.render @pad, lineno, text
       else
+        ## messabox does have a method to paint the whole window in bg color its in rwidget.rb
+        att = NORMAL
+        FFI::NCurses.wattron(@pad, @cp | att)
+        FFI::NCurses.mvwaddstr(@pad,lineno, 0, @clearstring) if @clearstring
         FFI::NCurses.mvwaddstr(@pad,lineno, 0, @content[lineno])
+
+        #FFI::NCurses.mvwaddstr(pad, lineno, 0, text)
+        FFI::NCurses.wattroff(@pad, @cp | att)
       end
     end
 
@@ -170,6 +188,7 @@ module Cygnus
     # Supply an array of string to be displayed
     # This will replace existing text
 
+    ## XXX in list text returns the selected row, list returns the full thing, keep consistent
     def text lines
       raise "text() receiving null content" unless lines
       @content = lines
@@ -177,6 +196,7 @@ module Cygnus
       @repaint_all = true
       init_vars
     end
+    alias :list :text
     def content
       raise "content is nil " unless @content
       return @content
@@ -236,7 +256,12 @@ module Cygnus
     # write pad onto window
     #private
     def padrefresh
-      FFI::NCurses.prefresh(@pad,@prow,@pcol, @startrow, @startcol, @rows + @startrow, @cols+@startcol);
+      top = @window.top
+      left = @window.left
+      sr = @startrow + top
+      sc = @startcol + left
+      FFI::NCurses.prefresh(@pad,@prow,@pcol, sr , sc , @rows + sr , @cols+ sc );
+      #FFI::NCurses.prefresh(@pad,@prow,@pcol, @startrow + top, @startcol + left, @rows + @startrow + top, @cols+@startcol + left);
     end
 
     # convenience method to return byte
@@ -281,7 +306,11 @@ module Cygnus
       #HERE we need to populate once so user can pass a renderer
       unless @suppress_border
         if @repaint_all
-          @window.print_border_only @top, @left, @height-1, @width, $datacolor
+          ## XXX im not getting the background color.
+          #@window.print_border_only @top, @left, @height-1, @width, $datacolor
+          clr = get_color $datacolor, @color, @bgcolor
+          #@window.print_border @top, @left, @height-1, @width, clr
+          @window.print_border_only @top, @left, @height-1, @width, clr
           print_title
           @window.wrefresh
         end
@@ -445,13 +474,15 @@ module Cygnus
       bounds_check
     end
     def scroll_right
-      if @content_cols < @cols
+      # I don't think it will ever be less since we've increased it to cols
+      if @content_cols <= @cols
         maxpcol = 0
+        @pcol = 0
       else
-        maxpcol = @content_cols - @cols
+        maxpcol = @content_cols - @cols - 1
+        @pcol += 1
+        @pcol = maxpcol if @pcol > maxpcol
       end
-      @pcol += 1
-      @pcol = maxpcol if @pcol > maxpcol
       # to prevent right from retaining earlier painted values
       # padreader does not do a clear, yet works fine.
       # OK it has an update_panel after padrefresh, that clears it seems.
@@ -757,7 +788,7 @@ module Cygnus
   end  # class textpad
 
   # a test renderer to see how things go
-  class DefaultRubyRenderer
+  class DefaultFileRenderer
     def render pad, lineno, text
       bg = :black
       fg = :white
