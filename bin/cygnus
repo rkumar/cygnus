@@ -8,7 +8,7 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-12 01:03
+#  Last update: 2013-03-12 15:03
 #
 #  == CHANGES
 #  == BUGS
@@ -119,16 +119,7 @@ require 'fileutils'
     #lb = Cygnus::TextPad.new form, :height => height, :width => width, :row => 0, :col => 0 , :title => "A title", :name => "popup"
     lb.text(list)
     #
-    # added next line so caller can configure listbox with 
-    # events such as ENTER_ROW, LEAVE_ROW or LIST_SELECTION_EVENT or PRESS
-    # 2011-11-11 
-    #yield lb if block_given? # No it won't work since this returns
     window.bkgd(Ncurses.COLOR_PAIR($reversecolor));
-    window.werase
-    #window.wrefresh
-    #Ncurses::Panel.update_panels
-    #window.wrefresh
-    #lb.padrefresh
     form.repaint
     Ncurses::Panel.update_panels
     begin
@@ -153,6 +144,119 @@ require 'fileutils'
             return lb.current_index #if lb.selection_mode != :multiple
           end
           #yield ch if block_given?
+        end
+      end
+    ensure
+      window.destroy  
+    end
+    return nil
+  end
+  def main_menu
+    h = { 
+      :a => :ack,
+      "/" => :ffind,
+      :l => :locate,
+      :v => :viminfo,
+      :z => :z_interface,
+      :d => :child_dirs,
+      :r => :recent_files,
+      :t => :dirtree,
+      "4" => :tree,
+      :s => :sort_menu, 
+      :F => :filter_menu,
+      :c => :command_menu ,
+      :B => :bindkey_ext_command,
+      :M => :newdir,
+      "%" => :newfile,
+      :x => :extras
+    }
+    ch, binding = menu "Main Menu", h
+    alert "Menu got #{ch}, #{binding}" if ch
+  end
+  ## 
+  #
+  #  make one which takes a single key and returns that key
+  #  Then call that from menu, indexed list etc, so we are not copying
+  #  that same thing over and over for tiny variations.
+  #
+  def menu title, hash, config={}, &block
+    raise ArgumentError, "Nil hash received by menu" unless hash
+    require 'cygnus/textpad'
+    list = []
+    hash.each_pair { |k, v| list << "   #[fg=yellow, bold] #{k} #[/end]    #[fg=green] #{v} #[/end]" }
+  #  s="#[fg=green]hello there#[fg=yellow, bg=black, dim]"
+
+    max_visible_items = config[:max_visible_items]
+    row = config[:row] || 5
+    col = config[:col] || 5
+    relative_to = config[:relative_to]
+    if relative_to
+      layout = relative_to.form.window.layout
+      row += layout[:top]
+      col += layout[:left]
+    end
+    config.delete :relative_to
+    #longest = list.max_by(&:length)
+    width = config[:width] || 60
+    config[:title] = title if title
+    if config[:title]
+      width = config[:title].size + 2 if width < config[:title].size
+    end
+    height = config[:height]
+    height ||= [max_visible_items || 25, list.length+2].min 
+    #layout(1+height, width+4, row, col) 
+    layout = { :height => 0+height, :width => 0+width, :top => row, :left => col } 
+    window = VER::Window.new(layout)
+    form = RubyCurses::Form.new window
+
+    listconfig = config[:listconfig] || {}
+    listconfig[:list] = list
+    listconfig[:width] = width
+    listconfig[:height] = height
+    #listconfig[:selection_mode] ||= :single
+    listconfig.merge!(config)
+    listconfig.delete(:row); 
+    listconfig.delete(:col); 
+    # trying to pass populists block to listbox
+    #lb = RubyCurses::List.new form, listconfig, &block
+    lb = Cygnus::TextPad.new form, listconfig, &block
+    #lb = Cygnus::TextPad.new form, :height => height, :width => width, :row => 0, :col => 0 , :title => "A title", :name => "popup"
+    lb.text(list)
+    lb.formatted_text(list, :tmux)
+    #
+    window.bkgd(Ncurses.COLOR_PAIR($datacolor));
+    form.repaint
+    Ncurses::Panel.update_panels
+    begin
+      while((ch = window.getchar()) != 999 )
+        case ch
+        when -1
+          next
+        when ?\C-q.getbyte(0)
+          break
+        else
+          lb.handle_key ch
+          form.repaint
+          if ch == 13 || ch == 10
+            s = lb.current_value.to_s.strip #if lb.selection_mode != :multiple
+            ch = s[0].ord
+          end
+          if ch > 32 and ch < 127
+            ch = ch.chr
+            binding = hash[ch]
+            binding = hash[ch.to_sym] unless binding
+            if binding
+              if respond_to?(binding, true)
+                send(binding)
+              end
+            end
+            return ch, binding
+          end
+          if ch == 27 || ch == 2727
+            return nil
+          elsif ch == 13 || ch == 10
+            return nil
+          end
         end
       end
     ensure
@@ -249,10 +353,10 @@ require 'fileutils'
     def display_dir
       p = @form.by_name["dirlist"]
       p.title(File.basename(Dir.pwd))
-      text = get_dirs
+      text = get_file_list
       p.text(text)
     end
-    def get_dirs
+    def get_file_list
       text = Dir.entries "."
       text.delete_at 0
       return text
@@ -313,9 +417,18 @@ require 'fileutils'
       end
     end
     def show
-      list = get_dirs
-      ix = padpopuplist list, :title => "something", :bgcolor => :blue, :color => :white
+      list = get_file_list
+      ix = padpopuplist list, :title => "Files", :bgcolor => :blue, :color => :white
+      return unless ix
+      open_file list[ix]
       #alert "Got #{list[ix]}" if ix
+    end
+    def open_file filename
+      if File.directory? filename
+        change_dir filename
+      else
+        display_file filename
+      end
     end
     @form.bind_key(?q, "quit: ") { throw :close }
     @form.bind_key(?,, "goto_parent_dir") { goto_parent_dir }
@@ -324,6 +437,7 @@ require 'fileutils'
     @form.bind_key(?m, "create_bookmark") { create_bookmark }
     @form.bind_key(?', "goto_bookmark") { goto_bookmark }
     @form.bind_key(?\M-c, "show") { show }
+    @form.bind_key(?`, "main_menu") { main_menu }
     w = 20
     w2 = FFI::NCurses.COLS-w-1
     title = File.basename(Dir.pwd)
@@ -335,11 +449,7 @@ require 'fileutils'
     p.bind(:PRESS) do |aev|
       o = aev.source
       filename = aev.text
-      if File.directory? filename
-        change_dir filename
-      else
-        display_file filename
-      end
+      open_file filename
     end
     p.bind(:ENTER_ROW) do |aev|
       filename = aev.text
@@ -349,7 +459,7 @@ require 'fileutils'
       $message.value = "%20s %10s %s" % [ st.mtime, st.size, filename ]
     end
 
-    text = get_dirs
+    text = get_file_list
     p.text(text)
 
     t = Cygnus::TextPad.new @form, :height => FFI::NCurses.LINES-1, :width => w2+2, :row => 0, :col => w-1 , :title => " ruby ", :name => "tv"
