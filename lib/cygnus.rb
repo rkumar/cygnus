@@ -35,16 +35,16 @@ CURMARK='>'
 MSCROLL = 10
 SPACE=" "
 CLEAR      = "\e[0m"
-BOLD       = "\e[1m"
-BOLD_OFF       = "\e[22m"
-RED        = "\e[31m"
-ON_RED        = "\e[41m"
-GREEN      = "\e[32m"
-YELLOW     = "\e[33m"
-BLUE       = "\e[1;34m"
-
+#BOLD       = "\e[1m"
+#BOLD_OFF       = "\e[22m"
+#RED        = "\e[31m"
+#ON_RED        = "\e[41m"
+#GREEN      = "\e[32m"
+#YELLOW     = "\e[33m"
+#BLUE       = "\e[1;34m"
+#
 ON_BLUE    = "\e[44m"
-REVERSE    = "\e[7m"
+#REVERSE    = "\e[7m"
 CURSOR_COLOR = ON_BLUE
 $patt=nil
 $ignorecase = true
@@ -322,21 +322,6 @@ def TODOrun_command f
   get_char
 end
 
-## cd to a dir
-def OLDchange_dir f, pos=nil
-  $visited_dirs.insert(0, Dir.pwd)
-  f = File.expand_path(f)
-  Dir.chdir f
-  $filterstr ||= "M"
-  $files = `zsh -c 'print -rl -- *(#{$sorto}#{$hidden}#{$filterstr})'`.split("\n")
-  post_cd
-  if pos
-    # convert curpos to sta also
-    #$cursor = pos.to_i
-    goto_line pos.to_i
-  end
-end
-
 ## clear sort order and refresh listing, used typically if you are in some view
 #  such as visited dirs or files
 def escape
@@ -476,23 +461,7 @@ end
 def prev_page
   $sta -= $pagesize
 end
-def print_help
-  system("clear")
-  puts "HELP"
-  puts
-  puts "To open a file or dir press 1-9 a-z A-Z "
-  puts "Command Mode: Will prompt for a command to run on a file, after selecting using hotkey"
-  puts "Selection Mode: Each selection adds to selection list (toggles)"
-  puts "                Upon exiting mode, user is prompted for a command to run on selected files"
-  puts
-  ary = []
-  $bindings.each_pair { |k, v| ary.push "#{k.ljust(7)}  =>  #{v}" }
-  ary = columnate ary, $grows - 7
-  ary.each {|line| print line, "\n"  }
-  get_char
-
-end
-def show_marks
+def TODOshow_marks
   puts
   puts "Bookmarks: "
   $bookmarks.each_pair { |k, v| puts "#{k.ljust(7)}  =>  #{v}" }
@@ -523,7 +492,7 @@ def main_menu
   }
   menu "Main Menu", h
 end
-def menu title, h
+def TODOmenu title, h
   return unless h
 
   pbold "#{title}"
@@ -697,21 +666,25 @@ def filter_menu
   end
   if files
     $files = files
+    show_list
     $stact = 0
   end
 end
 def select_used_dirs
   $title = "Used Directories"
   $files = $used_dirs.uniq
+  show_list
 end
 def select_visited_files
   # not yet a unique list, needs to be unique and have latest pushed to top
   $title = "Visited Files"
   $files = $visited_files.uniq
+  show_list
 end
 def select_bookmarks
   $title = "Bookmarks"
   $files = $bookmarks.values
+  show_list
 end
 
 ## part copied and changed from change_dir since we don't dir going back on top
@@ -911,10 +884,11 @@ def get_char
   when 27
     return "ESCAPE"
   end
-  if c >=0 && c < 127
-    return c.chr
-  end
-  c
+  keycode_tos c
+#  if c > 32 && c < 127
+    #return c.chr
+  #end
+  ## use keycode_tos from Utils.
 end
 
 def pbold text
@@ -1155,19 +1129,40 @@ def bindkey_ext_command
     $bindings[ch] = "command_file #{pro} #{yn} #{com}"
   end
 end
+def viminfo
+  file = File.expand_path("~/.viminfo")
+  if File.exists? file
+    $title = "Files from ~/.viminfo"
+    #$files = `grep '^>' ~/.viminfo | cut -d ' ' -f 2- | sed "s#~#$HOME#g"`.split("\n")
+    $files = `grep '^>' ~/.viminfo | cut -d ' ' -f 2- `.split("\n")
+    $files.reject! {|x| x = File.expand_path(x); !File.exists?(x) }
+    show_list
+  end
+end
+def z_interface
+  file = File.expand_path("~/.z")
+  if File.exists? file
+    $title = "Directories from ~/.z"
+    $files = `sort -rn -k2 -t '|' ~/.z | cut -f1 -d '|'`.split("\n")
+    home = ENV['HOME']
+    $files.collect! do |f| 
+      f.sub(/#{home}/,"~")
+    end
+    show_list
+  end
+end
 def ack
-  print "Enter a pattern to search (ack): "
-  #pattern = gets.chomp
-  pattern = Readline::readline('>', true)
-  return if pattern == ""
+  pattern = get_string "Enter a pattern to search (ack): "
+  return if pattern.nil? || pattern == ""
   $title = "Files found using 'ack' #{pattern}"
-  system("ack #{pattern}")
-  pause
+  #system("ack #{pattern}")
+  #pause
   files = `ack -l #{pattern}`.split("\n")
   if files.size == 0
     perror "No files found."
   else
     $files = files
+    show_list
   end
 end
 def ffind
@@ -1179,6 +1174,7 @@ def ffind
     perror "No files found."
   else
     $files = files
+    show_list
   end
 end
 def locate
@@ -1191,42 +1187,17 @@ def locate
     perror "No files found."
   else
     $files = files
+    show_list
   end
 end
 
 ## Displays files from .viminfo file, if you use some other editor which tracks files opened
 #  then you can modify this accordingly.
 #
-def viminfo
-  file = File.expand_path("~/.viminfo")
-  if File.exists? file
-    $title = "Files from ~/.viminfo"
-    #$files = `grep '^>' ~/.viminfo | cut -d ' ' -f 2- | sed "s#~#$HOME#g"`.split("\n")
-    $files = `grep '^>' ~/.viminfo | cut -d ' ' -f 2- `.split("\n")
-    $files.reject! {|x| x = File.expand_path(x); !File.exists?(x) }
-    return $files
-  end
-  return nil
-end
 
 ##  takes directories from the z program, if you use autojump you can
 #   modify this accordingly
 #
-def z_interface
-  file = File.expand_path("~/.z")
-  if File.exists? file
-    $title = "Directories from ~/.z"
-    $files = `sort -rn -k2 -t '|' ~/.z | cut -f1 -d '|'`.split("\n")
-    return $files
-  end
-  return nil
-end
-
-## there is no one consisten way i am getting.
-#  i need to do a shell join if I am to pipe ffiles to say: xargs ls -t
-#  but if i want to pipe names to grep xxx then i need to join with newlines
-def pipe
-end
 
 ## some cursor movement functions
 ##
