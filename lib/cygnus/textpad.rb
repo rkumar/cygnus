@@ -8,7 +8,7 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-12 01:44
+#  Last update: 2013-03-13 16:13
 #
 #  == CHANGES
 #  == TODO 
@@ -58,6 +58,7 @@ module Cygnus
       #@width = @width.ifzero(FFI::NCurses.COLS)
       @rows = @height
       @cols = @width
+      # NOTE XXX if cols is > COLS then padrefresh can fail
       @startrow = @row
       @startcol = @col
       #@suppress_border = config[:suppress_border]
@@ -109,11 +110,11 @@ module Cygnus
       #@renderer ||= DefaultFileRenderer.new #if ".rb" == @filetype
       @content_rows = @content.count
       @content_cols = content_cols()
-      @title += " [ #{@content_rows},#{@content_cols}] " if @cols > 50
+      # this should be explicit and not "intelligent"
+      #@title += " [ #{@content_rows},#{@content_cols}] " if @cols > 50
       @content_rows = @rows if @content_rows < @rows
       @content_cols = @cols if @content_cols < @cols
-      $log.debug "XXXX content_cols = #{@content_cols}"
-      #@content_cols = 200 if @content_cols > 200 # trying out since some files not displaying
+      #$log.debug "XXXX content_cols = #{@content_cols}"
 
       create_pad
 
@@ -260,7 +261,9 @@ module Cygnus
       left = @window.left
       sr = @startrow + top
       sc = @startcol + left
-      FFI::NCurses.prefresh(@pad,@prow,@pcol, sr , sc , @rows + sr , @cols+ sc );
+      retval = FFI::NCurses.prefresh(@pad,@prow,@pcol, sr , sc , @rows + sr , @cols+ sc );
+      $log.warn "XXX:  PADREFRESH #{retval}, #{@prow}, #{@pcol}, #{sr}, #{sc}, #{@rows+sr}, #{@cols+sc}." if retval == -1
+      # padrefresh can fail if width is greater than NCurses.COLS
       #FFI::NCurses.prefresh(@pad,@prow,@pcol, @startrow + top, @startcol + left, @rows + @startrow + top, @cols+@startcol + left);
     end
 
