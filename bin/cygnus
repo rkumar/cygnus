@@ -8,7 +8,7 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-13 20:25
+#  Last update: 2013-03-14 14:45
 #
 #  == CHANGES
 #  == BUGS
@@ -19,6 +19,10 @@
 #
 #  == TODO 
 #
+#     _ columnate, fix alignment with truncating, 
+#       _ paging when more than pagesize * cols.
+#       _ need to get the keys, in fact make this the first thing on top.
+#         such as parent. pop. + etc. bookmark etc
 #     _ work on common file, so functionality of cetus can be shared easily
 #     x use same keys as cetus for parent pop etc , . ' etc maybe even backtick for menu
 #     _ jump to single pane and back.
@@ -343,8 +347,11 @@ include Cygnus
     listconfig.merge!(config)
     listconfig.delete(:row); 
     listconfig.delete(:col); 
-    list = Dir.entries(dir)
-    alist = index_this_list list
+    list = get_file_list(dir)
+    #alist = index_this_list list
+    #alist = columnate alist, $grows
+    # NOTE XXX we are supposed to page the list with space, using pagelist
+    alist = columnate_with_indexing list, $grows
     # trying to pass populists block to listbox
     #lb = RubyCurses::List.new form, listconfig, &block
     lb = Cygnus::TextPad.new form, listconfig, &block
@@ -366,19 +373,26 @@ include Cygnus
             ix = get_index chr
             if ix
               file = list[ix]
-              file = File.expand_path file
-              if File.directory? file
-                FileUtils.chdir file
-                list = Dir.entries(".")
-                alist = index_this_list list
-                lb.formatted_text(alist, :tmux)
-                lb.title = Dir.pwd
-                lb.padrefresh
-                form.repaint
-                next
-              elsif File.file? file
-                return file
+              if file
+                file = File.expand_path file
+                if File.directory? file
+                  FileUtils.chdir file
+                  list = get_file_list
+                  #alist = index_this_list list
+                  alist = columnate_with_indexing list, $grows
+                  lb.formatted_text(alist, :tmux)
+                  lb.title = Dir.pwd
+                  lb.padrefresh
+                  form.repaint
+                  next
+                elsif File.file? file
+                  return file
+                else
+                  alert "Neither file not directory: (#{file})"
+                  $log.warn "XXXXX: FILE Neither file not directory: (#{file})"
+                end
               end
+            else
             end
             next
           end
@@ -443,7 +457,9 @@ include Cygnus
     alist = []
     list.each_with_index { |v, ix| 
       k = get_shortcut ix
-      alist << " #[fg=yellow, bold] #{k} #[end] #[fg=green]#{v}#[end]" 
+      #alist << " #[fg=yellow, bold] #{k} #[end] #[fg=green]#{v}#[end]" 
+      # above gets truncated by columnate and results in errors in colorparsers etc
+      alist << " #{k} #{v}" 
     }
     return alist
   end
@@ -595,10 +611,17 @@ include Cygnus
       text = get_file_list
       p.text(text)
     end
-    def get_file_list
-      text = Dir.entries "."
-      text.delete_at 0
-      return text
+    def get_file_list dir="."
+      list = Dir.entries dir
+      list.delete_at 0
+      list.collect! do |e|
+        if File.directory? e
+          e << "/"
+        else
+          e
+        end
+      end
+      return list
     end
     def pop_dir
       d = @dir_stack.pop
