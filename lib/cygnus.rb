@@ -34,7 +34,7 @@ GMARK='*'
 CURMARK='>'
 MSCROLL = 10
 SPACE=" "
-CLEAR      = "\e[0m"
+#CLEAR      = "\e[0m"
 #BOLD       = "\e[1m"
 #BOLD_OFF       = "\e[22m"
 #RED        = "\e[31m"
@@ -45,7 +45,8 @@ CLEAR      = "\e[0m"
 #
 ON_BLUE    = "\e[44m"
 #REVERSE    = "\e[7m"
-CURSOR_COLOR = ON_BLUE
+CURSOR_COLOR = ""
+CLEAR = ""
 $patt=nil
 $ignorecase = true
 $quitting = false
@@ -89,8 +90,9 @@ end
 # ary - array of data
 # sz  - lines in one column
 #
-def columnate ary, sz
+def columnate_with_indexing ary, sz
   buff=Array.new
+  $log.warn "columnate_with_indexing got nil list " unless ary
   return buff if ary.nil? || ary.size == 0
   
   # determine width based on number of files to show
@@ -106,13 +108,6 @@ def columnate ary, sz
     tmp = (ars * 1.000/ sz).ceil
     wid = $gcols / tmp - d
   end
-  #elsif ars < sz * 2
-    #wid = $gcols/2 - d
-  #elsif ars < sz * 3
-    #wid = $gcols/3 - d
-  #else
-    #wid = $gcols/$gviscols - d
-  #end
 
   # ix refers to the index in the complete file list, wherease we only show 60 at a time
   ix=0
@@ -122,21 +117,32 @@ def columnate ary, sz
     while ctr < sz
 
       f = ary[ix]
-      fsz = f.size
+      # be careful of modifying f or original array gets modified XXX
+      k = get_shortcut ix
+      isdir = f[-1] == "/"
+      fsz = f.size + k.to_s.size + 5
       if fsz > wid
+        # truncated since longer
         f = f[0, wid-2]+"$ "
         ## we do the coloring after trunc so ANSI escpe seq does not get get
-        if ix + $sta == $cursor
-          f = "#{CURSOR_COLOR}#{f}#{CLEAR}"
-        end
+        #if ix + $sta == $cursor
+          #f = "#{CURSOR_COLOR}#{f}#{CLEAR}"
+        #end
       else
         ## we do the coloring before padding so the entire line does not get padded, only file name
-        if ix + $sta == $cursor
-          f = "#{CURSOR_COLOR}#{f}#{CLEAR}"
-        end
+        #if ix + $sta == $cursor
+          #f = "#{CURSOR_COLOR}#{f}#{CLEAR}"
+        #end
         #f = f.ljust(wid)
-        f << " " * (wid-fsz)
+        # pad with spaces
+        #f << " " * (wid-fsz)
+        f = f + " " * (wid-fsz)
       end
+      # now we add the shortcut with the coloring (we need to adjust the space of the shortcut)
+      #
+      colr = "white"
+      colr = "blue, bold" if isdir
+      f = " #[fg=yellow, bold] #{k} #[end] #[fg=#{colr}]#{f}#[end]" 
 
       if buff[ctr]
         buff[ctr] += f
