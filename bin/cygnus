@@ -8,10 +8,15 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-14 14:45
+#  Last update: 2013-03-15 17:22
 #
 #  == CHANGES
 #  == BUGS
+#     _ white line at bottom and right
+#     _ restrict to certain number of rows, space pages
+#       this means we need to map space Alt-n etc ourselfves.
+#     _ truncation is not correct
+#     x showing file should put filename on top
 #     x when changing dirs , old crow is left, should be first, or previously used.
 #       when form triggers a key then bounds check not run. form keys are a pain with pad
 #       anything happening outside of here
@@ -53,416 +58,480 @@ require 'fileutils'
 include Cygnus
 
 
-  class DirRenderer
-    def render pad, lineno, text
-      bg = :black
-      fg = :white
-      att = NORMAL
-      cp = $datacolor
-      if File.directory? text
-        fg = :blue
-        att = BOLD
-        text << "/"
-        cp = get_color($datacolor, fg, bg)
-      elsif File.symlink? text
-        fg = :magenta
-        #text << "->"
-        text = text + "->"
-        cp = get_color($datacolor, fg, bg)
-      elsif File.executable? text
-        fg = :yellow
-        #text << "*"
-        text = text + "*"
-        cp = get_color($datacolor, fg, bg)
-      elsif text =~ /(~|swp)$/
-        fg = :blue
-        #att = BOLD
-        cp = get_color($datacolor, fg, bg)
+class DirRenderer
+  def render pad, lineno, text
+    bg = :black
+    fg = :white
+    att = NORMAL
+    cp = $datacolor
+    if File.directory? text
+      fg = :blue
+      att = BOLD
+      text << "/" unless text[-1] == "/"
+      cp = get_color($datacolor, fg, bg)
+    elsif File.symlink? text
+      fg = :magenta
+      #text << "->"
+      text = text + "->"
+      cp = get_color($datacolor, fg, bg)
+    elsif File.executable? text
+      fg = :yellow
+      #text << "*"
+      text = text + "*"
+      cp = get_color($datacolor, fg, bg)
+    elsif text =~ /(~|swp)$/
+      fg = :blue
+      #att = BOLD
+      cp = get_color($datacolor, fg, bg)
+    else
+    end
+    FFI::NCurses.wattron(pad,FFI::NCurses.COLOR_PAIR(cp) | att)
+    FFI::NCurses.mvwaddstr(pad, lineno, 0, text)
+    FFI::NCurses.wattroff(pad,FFI::NCurses.COLOR_PAIR(cp) | att)
+
+  end # def
+end # class
+def padpopuplist list, config={}, &block
+  raise ArgumentError, "Nil list received by popuplist" unless list
+  require 'cygnus/textpad'
+
+  max_visible_items = config[:max_visible_items]
+  row = config[:row] || 5
+  col = config[:col] || 5
+  relative_to = config[:relative_to]
+  if relative_to
+    layout = relative_to.form.window.layout
+    row += layout[:top]
+    col += layout[:left]
+  end
+  config.delete :relative_to
+  longest = list.max_by(&:length)
+  width = config[:width] || longest.size()+2 # borders take 2
+  if config[:title]
+    width = config[:title].size + 2 if width < config[:title].size
+  end
+  height = config[:height]
+  height ||= [max_visible_items || 10+2, list.length+2].min 
+  #layout(1+height, width+4, row, col) 
+  layout = { :height => 0+height, :width => 0+width, :top => row, :left => col } 
+  window = VER::Window.new(layout)
+  form = RubyCurses::Form.new window
+
+  listconfig = config[:listconfig] || {}
+  listconfig[:list] = list
+  listconfig[:width] = width
+  listconfig[:height] = height
+  #listconfig[:selection_mode] ||= :single
+  listconfig.merge!(config)
+  listconfig.delete(:row); 
+  listconfig.delete(:col); 
+  # trying to pass populists block to listbox
+  #lb = RubyCurses::List.new form, listconfig, &block
+  lb = Cygnus::TextPad.new form, listconfig, &block
+  #lb = Cygnus::TextPad.new form, :height => height, :width => width, :row => 0, :col => 0 , :title => "A title", :name => "popup"
+  lb.text(list)
+  #
+  window.bkgd(Ncurses.COLOR_PAIR($reversecolor));
+  form.repaint
+  Ncurses::Panel.update_panels
+  begin
+    while((ch = window.getchar()) != 999 )
+      case ch
+      when -1
+        next
+      when ?\C-q.getbyte(0)
+        break
       else
-      end
-      FFI::NCurses.wattron(pad,FFI::NCurses.COLOR_PAIR(cp) | att)
-      FFI::NCurses.mvwaddstr(pad, lineno, 0, text)
-      FFI::NCurses.wattroff(pad,FFI::NCurses.COLOR_PAIR(cp) | att)
+        lb.handle_key ch
+        form.repaint
+        if ch == 13 || ch == 10
+          return lb.current_index #if lb.selection_mode != :multiple
 
-    end # def
-  end # class
-  def padpopuplist list, config={}, &block
-    raise ArgumentError, "Nil list received by popuplist" unless list
-    require 'cygnus/textpad'
-
-    max_visible_items = config[:max_visible_items]
-    row = config[:row] || 5
-    col = config[:col] || 5
-    relative_to = config[:relative_to]
-    if relative_to
-      layout = relative_to.form.window.layout
-      row += layout[:top]
-      col += layout[:left]
-    end
-    config.delete :relative_to
-    longest = list.max_by(&:length)
-    width = config[:width] || longest.size()+2 # borders take 2
-    if config[:title]
-      width = config[:title].size + 2 if width < config[:title].size
-    end
-    height = config[:height]
-    height ||= [max_visible_items || 10+2, list.length+2].min 
-    #layout(1+height, width+4, row, col) 
-    layout = { :height => 0+height, :width => 0+width, :top => row, :left => col } 
-    window = VER::Window.new(layout)
-    form = RubyCurses::Form.new window
-
-    listconfig = config[:listconfig] || {}
-    listconfig[:list] = list
-    listconfig[:width] = width
-    listconfig[:height] = height
-    #listconfig[:selection_mode] ||= :single
-    listconfig.merge!(config)
-    listconfig.delete(:row); 
-    listconfig.delete(:col); 
-    # trying to pass populists block to listbox
-    #lb = RubyCurses::List.new form, listconfig, &block
-    lb = Cygnus::TextPad.new form, listconfig, &block
-    #lb = Cygnus::TextPad.new form, :height => height, :width => width, :row => 0, :col => 0 , :title => "A title", :name => "popup"
-    lb.text(list)
-    #
-    window.bkgd(Ncurses.COLOR_PAIR($reversecolor));
-    form.repaint
-    Ncurses::Panel.update_panels
-    begin
-      while((ch = window.getchar()) != 999 )
-        case ch
-        when -1
-          next
-        when ?\C-q.getbyte(0)
-          break
-        else
-          lb.handle_key ch
-          form.repaint
-          if ch == 13 || ch == 10
-            return lb.current_index #if lb.selection_mode != :multiple
-
-#            x = lb.selected_indices
-            return x if x
-            x = lb.current_index unless x
-            return [x]
-            # if multiple selection, then return list of selected_indices and don't catch 32
+          #            x = lb.selected_indices
+          return x if x
+          x = lb.current_index unless x
+          return [x]
+          # if multiple selection, then return list of selected_indices and don't catch 32
           ##elsif ch == 32      # if single selection
-            return lb.current_index #if lb.selection_mode != :multiple
-          end
-          #yield ch if block_given?
+          return lb.current_index #if lb.selection_mode != :multiple
         end
+        #yield ch if block_given?
       end
-    ensure
-      window.destroy  
     end
-    return nil
+  ensure
+    window.destroy  
   end
-  def main_menu
-    h = { 
-      :a => :ack,
-      "/" => :ffind,
-      :l => :locate,
-      :v => :viminfo,
-      :z => :z_interface,
-      :d => :child_dirs,
-      :r => :recent_files,
-      :t => :dirtree,
-      "4" => :tree,
-      :s => :sort_menu, 
-      :F => :filter_menu,
-      :c => :command_menu ,
-      :B => :bindkey_ext_command,
-      :M => :newdir,
-      "%" => :newfile,
-      :X => :file_navigator,
-      :x => :extras
-    }
-    ch, binding = menu "Main Menu", h
-    #alert "Menu got #{ch}, #{binding}" if ch
-  end
-  ## 
-  #
-  #  make one which takes a single key and returns that key
-  #  Then call that from menu, indexed list etc, so we are not copying
-  #  that same thing over and over for tiny variations.
-  #
-  def menu title, hash, config={}, &block
-    raise ArgumentError, "Nil hash received by menu" unless hash
-    list = []
-    hash.each_pair { |k, v| list << "   #[fg=yellow, bold] #{k} #[/end]    #[fg=green] #{v} #[/end]" }
+  return nil
+end
+def main_menu
+  h = { 
+    :a => :ack,
+    "/" => :ffind,
+    :l => :locate,
+    :v => :viminfo,
+    :z => :z_interface,
+    :d => :child_dirs,
+    :r => :recent_files,
+    :t => :dirtree,
+    "4" => :tree,
+    :s => :sort_menu, 
+    :F => :filter_menu,
+    :c => :command_menu ,
+    :B => :bindkey_ext_command,
+    :M => :newdir,
+    "%" => :newfile,
+    :X => :file_navigator,
+    :x => :extras
+  }
+  ch, binding = menu "Main Menu", h
+  #alert "Menu got #{ch}, #{binding}" if ch
+end
+## 
+#
+#  make one which takes a single key and returns that key
+#  Then call that from menu, indexed list etc, so we are not copying
+#  that same thing over and over for tiny variations.
+#
+def menu title, hash, config={}, &block
+  raise ArgumentError, "Nil hash received by menu" unless hash
+  list = []
+  hash.each_pair { |k, v| list << "   #[fg=yellow, bold] #{k} #[/end]    #[fg=green] #{v} #[/end]" }
   #  s="#[fg=green]hello there#[fg=yellow, bg=black, dim]"
-    config[:title] = title
-    ch = padpopup list, config, &block
-    return unless ch
-    if ch.size > 1
-      # could be a string due to pressing enter
-      # but what if we format into multiple columns
-      ch = ch.strip[0]
-    end
-
-    binding = hash[ch]
-    binding = hash[ch.to_sym] unless binding
-    if binding
-      if respond_to?(binding, true)
-        send(binding)
-      end
-    end
-    return ch, binding
+  config[:title] = title
+  ch = padpopup list, config, &block
+  return unless ch
+  if ch.size > 1
+    # could be a string due to pressing enter
+    # but what if we format into multiple columns
+    ch = ch.strip[0]
   end
 
-  # pops up a list, taking a single key and returning if it is in range of 33 and 126
-  def padpopup list, config={}, &block
-    require 'cygnus/textpad'
-    max_visible_items = config[:max_visible_items]
-    row = config[:row] || 5
-    col = config[:col] || 5
-    relative_to = config[:relative_to]
-    if relative_to
-      layout = relative_to.form.window.layout
-      row += layout[:top]
-      col += layout[:left]
+  binding = hash[ch]
+  binding = hash[ch.to_sym] unless binding
+  if binding
+    if respond_to?(binding, true)
+      send(binding)
     end
-    config.delete :relative_to
-    #longest = list.max_by(&:length)
-    width = config[:width] || 60
-    if config[:title]
-      width = config[:title].size + 2 if width < config[:title].size
-    end
-    height = config[:height]
-    height ||= [max_visible_items || 25, list.length+2].min 
-    #layout(1+height, width+4, row, col) 
-    layout = { :height => 0+height, :width => 0+width, :top => row, :left => col } 
-    window = VER::Window.new(layout)
-    form = RubyCurses::Form.new window
+  end
+  return ch, binding
+end
 
-    ## added 2013-03-13 - 18:07 so caller can be more specific on what is to be returned
-    valid_keys_int = config.delete :valid_keys_int
-    valid_keys_char = config.delete :valid_keys_char
+# pops up a list, taking a single key and returning if it is in range of 33 and 126
+def padpopup list, config={}, &block
+  require 'cygnus/textpad'
+  max_visible_items = config[:max_visible_items]
+  row = config[:row] || 5
+  col = config[:col] || 5
+  relative_to = config[:relative_to]
+  if relative_to
+    layout = relative_to.form.window.layout
+    row += layout[:top]
+    col += layout[:left]
+  end
+  config.delete :relative_to
+  #longest = list.max_by(&:length)
+  width = config[:width] || 60
+  if config[:title]
+    width = config[:title].size + 2 if width < config[:title].size
+  end
+  height = config[:height]
+  height ||= [max_visible_items || 25, list.length+2].min 
+  #layout(1+height, width+4, row, col) 
+  layout = { :height => 0+height, :width => 0+width, :top => row, :left => col } 
+  window = VER::Window.new(layout)
+  form = RubyCurses::Form.new window
 
-    listconfig = config[:listconfig] || {}
-    #listconfig[:list] = list
-    listconfig[:width] = width
-    listconfig[:height] = height
-    #listconfig[:selection_mode] ||= :single
-    listconfig.merge!(config)
-    listconfig.delete(:row); 
-    listconfig.delete(:col); 
-    # trying to pass populists block to listbox
-    #lb = RubyCurses::List.new form, listconfig, &block
-    lb = Cygnus::TextPad.new form, listconfig, &block
-    #lb = Cygnus::TextPad.new form, :height => height, :width => width, :row => 0, :col => 0 , :title => "A title", :name => "popup"
-    #lb.text(list)
-    ## TODO FIXME hardocoding tmux format
-    lb.formatted_text(list, :tmux)
-    #
-    window.bkgd(Ncurses.COLOR_PAIR($reversecolor));
-    form.repaint
-    Ncurses::Panel.update_panels
-    if valid_keys_int.nil? && valid_keys_char.nil?
-      valid_keys_int = (32..126)
-    end
+  ## added 2013-03-13 - 18:07 so caller can be more specific on what is to be returned
+  valid_keys_int = config.delete :valid_keys_int
+  valid_keys_char = config.delete :valid_keys_char
 
-    begin
-      while((ch = window.getchar()) != 999 )
+  listconfig = config[:listconfig] || {}
+  #listconfig[:list] = list
+  listconfig[:width] = width
+  listconfig[:height] = height
+  #listconfig[:selection_mode] ||= :single
+  listconfig.merge!(config)
+  listconfig.delete(:row); 
+  listconfig.delete(:col); 
+  # trying to pass populists block to listbox
+  #lb = RubyCurses::List.new form, listconfig, &block
+  lb = Cygnus::TextPad.new form, listconfig, &block
+  #lb = Cygnus::TextPad.new form, :height => height, :width => width, :row => 0, :col => 0 , :title => "A title", :name => "popup"
+  #lb.text(list)
+  ## TODO FIXME hardocoding tmux format
+  lb.formatted_text(list, :tmux)
+  #
+  window.bkgd(Ncurses.COLOR_PAIR($reversecolor));
+  form.repaint
+  Ncurses::Panel.update_panels
+  if valid_keys_int.nil? && valid_keys_char.nil?
+    valid_keys_int = (32..126)
+  end
 
-        # if a char range or array has been sent, check if the key is in it and send back
-        # else just stay here
-        if valid_keys_char
-          if ch > 32 && ch < 127
-            chr = ch.chr
-            return chr if valid_keys_char.include? chr
-          end
-        end
+  begin
+    while((ch = window.getchar()) != 999 )
 
-        # if the user specified an array or range of ints check against that
-        # therwise use the range of 33 .. 126
-        return ch.chr if valid_keys_int.include? ch
-
-        case ch
-        when -1
-          alert "does it really come here? -1 XXXXXXX"
-          next
-        when ?\C-q.getbyte(0)
-          break
-        else
-          #if ch > 32 && ch < 127
-            #ch = ch.chr
-            #return ch
-          #end
-          if ch == 13 || ch == 10
-            s = lb.current_value.to_s # .strip #if lb.selection_mode != :multiple
-            return s
-            #ch = s[0].ord
-          end
-          # close if escape or double escape
-          if ch == 27 || ch == 2727
-            return nil
-          end
-          lb.handle_key ch
-          form.repaint
+      # if a char range or array has been sent, check if the key is in it and send back
+      # else just stay here
+      if valid_keys_char
+        if ch > 32 && ch < 127
+          chr = ch.chr
+          return chr if valid_keys_char.include? chr
         end
       end
-    ensure
-      window.destroy  
+
+      # if the user specified an array or range of ints check against that
+      # therwise use the range of 33 .. 126
+      return ch.chr if valid_keys_int.include? ch
+
+      case ch
+      when -1
+        alert "does it really come here? -1 XXXXXXX"
+        next
+      when ?\C-q.getbyte(0)
+        break
+      else
+        #if ch > 32 && ch < 127
+        #ch = ch.chr
+        #return ch
+        #end
+        if ch == 13 || ch == 10
+          s = lb.current_value.to_s # .strip #if lb.selection_mode != :multiple
+          return s
+          #ch = s[0].ord
+        end
+        # close if escape or double escape
+        if ch == 27 || ch == 2727
+          return nil
+        end
+        lb.handle_key ch
+        form.repaint
+      end
     end
-    return nil
+  ensure
+    window.destroy  
   end
-  # pops up a list, taking a single key and returning if it is in range of 33 and 126
-  def full_indexed_list dir=Dir.pwd, config={}, &block
-    require 'cygnus/textpad'
-    max_visible_items = config[:max_visible_items]
-    row = config[:row] || 0
-    col = config[:col] || 0
-    relative_to = config[:relative_to]
-    if relative_to
-      layout = relative_to.form.window.layout
-      row += layout[:top]
-      col += layout[:left]
-    end
-    config.delete :relative_to
-    #longest = list.max_by(&:length)
-    width = config[:width] || FFI::NCurses.COLS
-    if config[:title]
-      width = config[:title].size + 2 if width < config[:title].size
-    end
-    height = config[:height]
-    #height ||= [max_visible_items || 25, list.length+2].min 
-    height ||= FFI::NCurses.LINES - 1
-    #layout(1+height, width+4, row, col) 
-    layout = { :height => 0+height, :width => 0+width, :top => row, :left => col } 
-    window = VER::Window.new(layout)
-    form = RubyCurses::Form.new window
+  return nil
+end
+# pops up a list, taking a single key and returning if it is in range of 33 and 126
+def full_indexed_list dir=Dir.pwd, config={}, &block
+  require 'cygnus/textpad'
+  max_visible_items = config[:max_visible_items]
+  row = config[:row] || 0
+  col = config[:col] || 0
+  relative_to = config[:relative_to]
+  if relative_to
+    layout = relative_to.form.window.layout
+    row += layout[:top]
+    col += layout[:left]
+  end
+  config.delete :relative_to
+  #longest = list.max_by(&:length)
+  width = config[:width] || FFI::NCurses.COLS
+  if config[:title]
+    width = config[:title].size + 2 if width < config[:title].size
+  end
+  height = config[:height]
+  #height ||= [max_visible_items || 25, list.length+2].min 
+  height ||= FFI::NCurses.LINES 
+  #layout(1+height, width+4, row, col) 
+  layout = { :height => 0+height, :width => 0+width, :top => row, :left => col } 
+  destroying = false
+  if config[:form]
+    #form = config[:form]
+    #window = form.window
+    #config.delete :form
+    #config.delete :window
+  else
+    @window = VER::Window.new(layout)
+    @form = RubyCurses::Form.new @window
+    destroying = true
+  end
+  form_bindings @form
 
-    ## added 2013-03-13 - 18:07 so caller can be more specific on what is to be returned
-    valid_keys_int = config.delete :valid_keys_int
-    valid_keys_char = config.delete :valid_keys_char
 
-    
-    listconfig = config[:listconfig] || {}
-    #listconfig[:list] = list
-    listconfig[:width] = width
-    listconfig[:height] = height
-    #listconfig[:selection_mode] ||= :single
-    listconfig.merge!(config)
-    listconfig.delete(:row); 
-    listconfig.delete(:col); 
-    list = get_file_list(dir)
-    #alist = index_this_list list
-    #alist = columnate alist, $grows
-    # NOTE XXX we are supposed to page the list with space, using pagelist
-    alist = columnate_with_indexing list, $grows
-    # trying to pass populists block to listbox
-    #lb = RubyCurses::List.new form, listconfig, &block
-    lb = Cygnus::TextPad.new form, listconfig, &block
-    #lb.text(list)
-    ## TODO FIXME hardocoding tmux format
-    lb.formatted_text(alist, :tmux)
-    #
-    window.bkgd(Ncurses.COLOR_PAIR($reversecolor));
-    form.repaint
-    Ncurses::Panel.update_panels
+  listconfig = config[:listconfig] || {}
+  #listconfig[:list] = list
+  listconfig[:width] = width
+  listconfig[:height] = height
+  listconfig[:name] = "fitp"
+  #listconfig[:selection_mode] ||= :single
+  listconfig.merge!(config)
+  listconfig.delete(:row); 
+  listconfig.delete(:col); 
+  listconfig.delete(:window); 
+  listconfig.delete(:form); 
+  $list = get_file_list(dir)
+  #alist = index_this_list list
+  #alist = columnate alist, $grows
+  # NOTE XXX we are supposed to page the list with space, using pagelist
+  alist = columnate_with_indexing $list, $grows
+  # trying to pass populists block to listbox
+  #lb = RubyCurses::List.new form, listconfig, &block
+  lb = Cygnus::TextPad.new @form, listconfig, &block
+  #lb.text(list)
+  ## TODO FIXME hardocoding tmux format
+  lb.formatted_text(alist, :tmux)
+  #
+  @window.bkgd(Ncurses.COLOR_PAIR($reversecolor));
+  @form.repaint
+  Ncurses::Panel.update_panels
 
-    begin
-      while((ch = window.getchar()) != 999 )
+  begin
+    while((ch = @window.getchar()) != 999 )
 
-        # if a char range or array has been sent, check if the key is in it and send back
-        # else just stay here
-          if ch > 32 && ch < 127
-            chr = ch.chr
-            ix = get_index chr
-            if ix
-              file = list[ix]
-              if file
-                file = File.expand_path file
-                if File.directory? file
-                  FileUtils.chdir file
-                  list = get_file_list
-                  #alist = index_this_list list
-                  alist = columnate_with_indexing list, $grows
-                  lb.formatted_text(alist, :tmux)
-                  lb.title = Dir.pwd
-                  lb.padrefresh
-                  form.repaint
-                  next
-                elsif File.file? file
-                  return file
-                else
-                  alert "Neither file not directory: (#{file})"
-                  $log.warn "XXXXX: FILE Neither file not directory: (#{file})"
-                end
-              end
+      # if a char range or array has been sent, check if the key is in it and send back
+      # else just stay here
+      if ( ( ch >= ?a.ord && ch <= ?z.ord ) || ( ch >= ?A.ord && ch <= ?Z.ord ) )
+        #alert "char got (#{ch.chr})"
+        chr = ch.chr
+        ix = get_index chr
+        if ix
+          file = $list[ix]
+          if file
+            file = File.expand_path file
+            if File.directory? file
+              FileUtils.chdir file
+              display_dir
+              next
+            elsif File.file? file
+              #return file
+              pad_display_file file, DefaultFileRenderer.new
+              lb.padrefresh
             else
+              alert "Some new error has crept in. Neither file not directory: (#{file})"
+              $log.warn "XXXXX: FILE Neither file not directory: (#{file})"
             end
-            next
           end
-
-
-        case ch
-        when -1
-          alert "does it really come here? -1 XXXXXXX"
-          next
-        when ?\C-q.getbyte(0)
-          break
         else
-          #if ch > 32 && ch < 127
-            #ch = ch.chr
-            #return ch
-          #end
-          if ch == 13 || ch == 10
-            return Dir.pwd
-            s = lb.current_value.to_s # .strip #if lb.selection_mode != :multiple
-            return s
-            #ch = s[0].ord
-          end
-          # close if escape or double escape
-          if ch == 27 || ch == 2727
-            return nil
-          end
-          lb.handle_key ch
-          form.repaint
         end
+        next
       end
-    ensure
-      window.destroy  
+
+
+      case ch
+      when -1
+        alert "does it really come here? -1 XXXXXXX"
+        next
+      when ?\C-q.getbyte(0)
+        break
+      else
+        if ch == 13 || ch == 10
+          return Dir.pwd
+          s = lb.current_value.to_s # .strip #if lb.selection_mode != :multiple
+          return s
+          #ch = s[0].ord
+        end
+        # close if escape or double escape
+        if ch == 27 || ch == 2727
+          return nil
+        end
+        #alert "got key before lb.handle #{ch.chr}"
+        retval = lb.handle_key ch
+        #          if retval == :UNHANDLED
+        #alert "got key in unhdnalde lb.handle #{ch}, #{retval}"
+        retval = @form.handle_key ch
+        $log.debug "XXXX form returned #{retval}"
+      end
+
+      @form.repaint
     end
-    return nil
+  ensure
+    @window.destroy if destroying
   end
-  def get_index key, vsz=999
-    # FIXME all this stuff about another key has to happen in the popup, not here
-    i = $IDX.index(key)
-    return i+$stact if i
-    #sz = $IDX.size
-    zch = nil
-    if vsz > 25
-      if key == "z" || key == "Z"
-        #print key
-        zch = get_char
-        #print zch
-        i = $IDX.index("#{key}#{zch}")
-        return i+$stact if i
+  return nil
+end
+def pad_display_file filename, renderer, config={}, &block
+  require 'cygnus/textpad'
+  row = config[:row] || 0
+  col = config[:col] || 0
+  width = config[:width] || FFI::NCurses.COLS
+  height = config[:height]
+  height ||= FFI::NCurses.LINES - 1
+  #layout(1+height, width+4, row, col) 
+  layout = { :height => 0+height, :width => 0+width, :top => row, :left => col } 
+  window = VER::Window.new(layout)
+  form = RubyCurses::Form.new window
+
+  listconfig = config[:listconfig] || {}
+  #listconfig[:list] = list
+  listconfig[:width] = width
+  listconfig[:height] = height
+  #listconfig[:selection_mode] ||= :single
+  listconfig.merge!(config)
+  listconfig.delete(:row); 
+  listconfig.delete(:col); 
+  listconfig[:filename] = filename
+  listconfig[:title] = filename
+  listconfig[:row] = 0
+  listconfig[:col] = 0
+  #alist = index_this_list list
+  #alist = columnate alist, $grows
+  # NOTE XXX we are supposed to page the list with space, using pagelist
+  #alist = columnate_with_indexing list, $grows
+  # trying to pass populists block to listbox
+  #lb = RubyCurses::List.new form, listconfig, &block
+  lb = Cygnus::TextPad.new form, listconfig, &block
+  lb.renderer renderer if renderer
+  #lb.text(list)
+  ## TODO FIXME hardocoding tmux format
+  #lb.formatted_text(alist, :tmux)
+  #
+  window.bkgd(Ncurses.COLOR_PAIR($reversecolor));
+  form.repaint
+  Ncurses::Panel.update_panels
+
+  begin
+    while((ch = window.getchar()) != 999 )
+
+      case ch
+      when ?q.getbyte(0), ?\C-q.getbyte(0), 13, 10, 27, 2727
+        break
+      else
+        lb.handle_key ch
+        form.repaint
       end
     end
-    return nil
+  ensure
+    window.destroy  
   end
-  def get_shortcut ix
-    $stact = 0
-    return "<" if ix < $stact
-    ix -= $stact
-    i = $IDX[ix]
-    return i if i
-    return "->"
+  return nil
+end
+def get_index key, vsz=999
+  # FIXME all this stuff about another key has to happen in the popup, not here
+  i = $IDX.index(key)
+  return i+$stact if i
+  #sz = $IDX.size
+  zch = nil
+  if vsz > 25
+    if key == "z" || key == "Z"
+      #print key
+      zch = get_char
+      #print zch
+      i = $IDX.index("#{key}#{zch}")
+      return i+$stact if i
+    end
   end
-  def index_this_list list
-    alist = []
-    list.each_with_index { |v, ix| 
-      k = get_shortcut ix
-      #alist << " #[fg=yellow, bold] #{k} #[end] #[fg=green]#{v}#[end]" 
-      # above gets truncated by columnate and results in errors in colorparsers etc
-      alist << " #{k} #{v}" 
-    }
-    return alist
-  end
+  return nil
+end
+def get_shortcut ix
+  $stact = 0
+  return "<" if ix < $stact
+  ix -= $stact
+  i = $IDX[ix]
+  return i if i
+  return "->"
+end
+def index_this_list list
+  alist = []
+  list.each_with_index { |v, ix| 
+    k = get_shortcut ix
+    #alist << " #[fg=yellow, bold] #{k} #[end] #[fg=green]#{v}#[end]" 
+    # above gets truncated by columnate and results in errors in colorparsers etc
+    alist << " #{k} #{v}" 
+  }
+  return alist
+end
 
   $IDX=('a'..'y').to_a
   $IDX.concat ('za'..'zz').to_a
@@ -505,9 +574,6 @@ include Cygnus
   end
 
 
-  App.new do
-    $bookmarks = {}
-    $cursor = 0
     def file_navigator
       file = full_indexed_list
       open_file file if file
@@ -599,13 +665,28 @@ include Cygnus
       else
         return
       end
+      pad_display_file filename, DefaultFileRenderer.new
+      return
       tv = @form.by_name["tv"]
       tv.title = filename
       tv.filename(filename)
       tv.text(get_file_contents(filename))
       $viewed_file = filename
     end
+    # sets $list - i have no other way till we make this into a class
     def display_dir
+      list = get_file_list
+      #alist = index_this_list list
+      alist = columnate_with_indexing list, $grows
+      lb = @form.by_name["fitp"]
+      lb.formatted_text(alist, :tmux)
+      lb.title = Dir.pwd
+      lb.padrefresh
+      @form.repaint
+      $list = list
+      return list
+    end
+    def OLD_display_dir
       p = @form.by_name["dirlist"]
       p.title(File.basename(Dir.pwd))
       text = get_file_list
@@ -680,53 +761,70 @@ include Cygnus
         display_file filename
       end
     end
-    config_read
-    @form.bind_key(?q, "quit: ") { throw :close }
-    @form.bind_key(?,, "goto_parent_dir") { goto_parent_dir }
-    @form.bind_key(?., "pop_dir") { pop_dir }
-    @form.bind_key(?+, "goto_dir") { goto_dir }
-    @form.bind_key(?m, "create_bookmark") { create_bookmark }
-    @form.bind_key(?f, "file_navigator") { file_navigator }
-    @form.bind_key(?', "goto_bookmark") { goto_bookmark }
-    @form.bind_key(?\M-b, "select_bookmark") { select_bookmark }
-    @form.bind_key(?\M-c, "show") { show }
-    @form.bind_key(?`, "main_menu") { main_menu }
-    w = 20
-    w2 = FFI::NCurses.COLS-w-1
-    title = File.basename(Dir.pwd)
-    
-    p = Cygnus::TextPad.new @form, :height => FFI::NCurses.LINES-1, :width => w-0, :row => 0, :col => 0 , :title => title, :name => "dirlist"
-    p.renderer DirRenderer.new
-    $view = p
-
-    p.bind(:PRESS) do |aev|
-      o = aev.source
-      filename = aev.text
-      open_file filename
+    def form_bindings form
+      form.bind_key(?`, 'main_menu') { main_menu }
+      form.bind_key(?+, 'main_menu') { goto_dir }
+      form.bind_key(?\,, 'goto_parent_dir') { goto_parent_dir }
     end
-    p.bind(:ENTER_ROW) do |aev|
-      filename = aev.text
-      $current_file = "#{Dir.pwd}/#{filename}"
-      st = File.stat(filename)
-      $cursor = aev.current_index
-      $message.value = "%20s %10s %s" % [ st.mtime, st.size, filename ]
-    end
+include RubyCurses
 
-    text = get_file_list
-    p.text(text)
+begin
+  # Initialize curses
+  VER::start_ncurses  # this is initializing colors via ColorMap.setup
+  logfilename = File.join(ENV["LOGDIR"] || "./" ,"rbc13.log")
+  $log = Logger.new(logfilename)
+  $log.level = Logger::DEBUG
 
-    t = Cygnus::TextPad.new @form, :height => FFI::NCurses.LINES-1, :width => w2+2, :row => 0, :col => w-1 , :title => " ruby ", :name => "tv"
-    t.renderer Cygnus::DefaultFileRenderer.new
-    $tv = t
-    t.bind(:PRESS) do |aev|
-      alert "Press got #{aev.curpos}, #{aev.current_index}, #{aev.text}"
-    end
+  catch(:close) do
+  ##@window = VER::Window.root_window
+  $catch_alt_digits = true; # emacs like alt-1..9 numeric arguments
+  #install_help_text my_help_text
 
-    $message = Variable.new
-    $message.value = "## File Stat Area ##"
-    @status_line = status_line :row => Ncurses.LINES-1
-
-    @status_line.command {
-      "cygnus | q Quit | ? Keys | ` Menu  | %40s" % [$message.value]
-    }
+  config_read
+  full_indexed_list Dir.pwd #, :form => @form
+  #@form = Form.new @window
+  @form.bind_key(KEY_F1, 'help'){ display_app_help }
+  @form.bind_key(?\M-c, 'select class') do
+    ask_classes
   end
+  @form.bind_key(?', 'select bookmark') do
+    ask_bookmark
+  end
+  @form.bind_key(?\M-d, 'View history') do
+    popup_history
+  end
+
+  #header = app_header "0.0.5", :text_center => "ri Documentation Browser", :text_right =>"" #, :color => :black, :bgcolor => :white #, :attr => :bold 
+  #r = 1; fc = 1;
+
+  # this is the old style of using a label at the screen bottom, you can use the status_line
+
+  #$message = Variable.new
+  #$message.value = "Message Comes Here"
+  #@status_line = status_line :row => Ncurses.LINES-1
+  #@status_line.command {
+    #"F1 Help | Q Quit | ? Keys | M-c Classes | M-d History | %20s" % [$message.value]
+  #}
+
+  #h = FFI::NCurses.LINES-2
+
+
+  #@form.repaint
+  #@window.wrefresh
+  #Ncurses::Panel.update_panels
+  #while((ch = @window.getchar()) != KEY_F10 )
+    #break if ch == ?Q.ord || ch == ?\C-q.getbyte(0)
+    #@form.handle_key(ch)
+    #@window.wrefresh
+  #end
+  end
+rescue => ex
+  textdialog ["Error in rib: #{ex} ", *ex.backtrace], :title => "Exception"
+  $log.debug( ex) if ex
+  $log.debug(ex.backtrace.join("\n")) if ex
+ensure
+  #@window.destroy if !@window.nil?
+  VER::stop_ncurses
+  p ex if ex
+  p(ex.backtrace.join("\n")) if ex
+end
