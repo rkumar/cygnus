@@ -14,7 +14,7 @@ $bookmarks = {}
 $mode = nil
 $glines=%x(tput lines).to_i
 $gcols=%x(tput cols).to_i
-$grows = $glines - 3
+$grows = $glines - 2
 $pagesize = 60
 $gviscols = 3
 $pagesize = $grows * $gviscols
@@ -101,6 +101,7 @@ def columnate_with_indexing ary, sz
   wid = 30
   ars = ary.size
   ars = [$pagesize, ary.size].min
+  # 2 maybe for borders also
   d = 0
   if ars <= sz
     wid = $gcols - d
@@ -120,7 +121,8 @@ def columnate_with_indexing ary, sz
       # be careful of modifying f or original array gets modified XXX
       k = get_shortcut ix
       isdir = f[-1] == "/"
-      fsz = f.size + k.to_s.size + 5
+      fsz = f.size + k.to_s.size + 0
+      fsz = f.size + 5
       if fsz > wid
         # truncated since longer
         f = f[0, wid-2]+"$ "
@@ -133,16 +135,17 @@ def columnate_with_indexing ary, sz
         #if ix + $sta == $cursor
           #f = "#{CURSOR_COLOR}#{f}#{CLEAR}"
         #end
-        #f = f.ljust(wid)
+        f = f.ljust(wid)
         # pad with spaces
         #f << " " * (wid-fsz)
-        f = f + " " * (wid-fsz)
+        #f = f + " " * (wid-fsz)
       end
       # now we add the shortcut with the coloring (we need to adjust the space of the shortcut)
       #
       colr = "white"
       colr = "blue, bold" if isdir
-      f = " #[fg=yellow, bold] #{k} #[end] #[fg=#{colr}]#{f}#[end]" 
+      k << " " if k.length == 1
+      f = " #[fg=yellow, bold]#{k}#[end] #[fg=#{colr}]#{f}#[end]" 
 
       if buff[ctr]
         buff[ctr] += f
@@ -322,7 +325,7 @@ def TODOrun_command f
   rescue Exception => ex
   end
 
-  refresh
+  c_refresh
   puts "Press a key ..."
   push_used_dirs Dir.pwd
   get_char
@@ -337,11 +340,14 @@ def escape
   $title = nil
   $filterstr = "M"
   visual_block_clear
-  refresh
+  c_refresh
 end
 
 ## refresh listing after some change like option change, or toggle
-def refresh
+# I think NCurses has a refresh which when called internally results in this chap
+# getting called since both are included. or maybe App or somehting has a refresh
+def c_refresh
+  alert "c_refresh called"
     $filterstr ||= "M"
     $files = `zsh -c 'print -rl -- *(#{$sorto}#{$hidden}#{$filterstr})'`.split("\n")
     $patt=nil
@@ -518,11 +524,11 @@ def toggle_menu
   case menu_text
   when :toggle_hidden
     $hidden = $hidden ? nil : "D"
-    refresh
+    c_refresh
   when :toggle_case
     #$ignorecase = $ignorecase ? "" : "i"
     $ignorecase = !$ignorecase
-    refresh
+    c_refresh
   when :toggle_columns
     $gviscols = 3 if $gviscols == 1
     #$long_listing = false if $gviscols > 1 
@@ -547,7 +553,7 @@ def toggle_menu
       x = $grows * $gviscols
       $pagesize = $pagesize==x ? $grows : x
     end
-    refresh
+    c_refresh
   end
 end
 
@@ -968,7 +974,7 @@ def command_file prompt, *command
     pbold "#{command} #{file} (#{pauseyn})"
     system "#{command} #{file}"
     pause if pauseyn == "y"
-    refresh
+    c_refresh
   else
     perror "File #{file} not found"
   end
@@ -1052,7 +1058,7 @@ def file_actions action=nil
     ch = get_char
     return if ch != "y"
     system "rmtrash #{files}"
-    refresh
+    c_refresh
   when :move
     print "move #{text} to : "
     #target = gets().chomp
@@ -1061,7 +1067,7 @@ def file_actions action=nil
     return if target == ""
     if File.directory? target
       FileUtils.mv text, target
-      refresh
+      c_refresh
     else
       perror "Target not a dir"
     end
@@ -1075,7 +1081,7 @@ def file_actions action=nil
       perror "Target (#{target}) exists"
     else
       FileUtils.cp text, target
-      refresh
+      c_refresh
     end
   when :chdir
     change_dir File.dirname(text)
@@ -1090,7 +1096,7 @@ def file_actions action=nil
         perror "Target (#{target}) exists"
       else
         system "tar zcvf #{target} #{files}"
-        refresh
+        c_refresh
       end
     end
   when :rename
@@ -1102,7 +1108,7 @@ def file_actions action=nil
     pause
     print
     system "#{menu_text} #{files}"
-    refresh
+    c_refresh
     pause
   end
   # remove non-existent files from select list due to move or delete or rename or whatever
@@ -1342,7 +1348,7 @@ def newdir
   begin
     FileUtils.mkdir str
     $used_dirs.insert(0, str) if File.exists?(str)
-    refresh
+    c_refresh
   rescue Exception => ex
     perror "Error in newdir: #{ex}"
   end
@@ -1354,7 +1360,7 @@ def newfile
   return if str == ""
   system "$EDITOR #{str}"
   $visited_files.insert(0, str) if File.exists?(str)
-  refresh
+  c_refresh
 end
 
 ##
@@ -1385,7 +1391,7 @@ def remove_from_list
   else
     $visited_files.delete(file)
   end
-  refresh
+  c_refresh
   $modified = true
 end
 #
@@ -1478,5 +1484,5 @@ def insert_into_list dir, file
   $files.insert ix, *file
 end
 
-run if __FILE__ == $PROGRAM_NAME
+#run if __FILE__ == $PROGRAM_NAME
 end
