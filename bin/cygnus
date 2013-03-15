@@ -8,7 +8,7 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-15 17:22
+#  Last update: 2013-03-15 19:21
 #
 #  == CHANGES
 #  == BUGS
@@ -93,7 +93,7 @@ class DirRenderer
 end # class
 def padpopuplist list, config={}, &block
   raise ArgumentError, "Nil list received by popuplist" unless list
-  require 'cygnus/textpad'
+  #require 'cygnus/textpad'
 
   max_visible_items = config[:max_visible_items]
   row = config[:row] || 5
@@ -218,7 +218,7 @@ end
 
 # pops up a list, taking a single key and returning if it is in range of 33 and 126
 def padpopup list, config={}, &block
-  require 'cygnus/textpad'
+  #require 'cygnus/textpad'
   max_visible_items = config[:max_visible_items]
   row = config[:row] || 5
   col = config[:col] || 5
@@ -315,7 +315,7 @@ def padpopup list, config={}, &block
 end
 # pops up a list, taking a single key and returning if it is in range of 33 and 126
 def full_indexed_list dir=Dir.pwd, config={}, &block
-  require 'cygnus/textpad'
+  #require 'cygnus/textpad'
   max_visible_items = config[:max_visible_items]
   row = config[:row] || 0
   col = config[:col] || 0
@@ -361,24 +361,40 @@ def full_indexed_list dir=Dir.pwd, config={}, &block
   listconfig.delete(:col); 
   listconfig.delete(:window); 
   listconfig.delete(:form); 
-  $list = get_file_list(dir)
+  $files = get_file_list(dir)
+  #lb = RubyCurses::List.new form, listconfig, &block
+  lb = Cygnus::TextPad.new @form, listconfig, &block
+
+  while true
+  if $patt
+    if $ignorecase
+      $view = $files.grep(/#{$patt}/i)
+    else
+      $view = $files.grep(/#{$patt}/)
+    end
+  else 
+    $view = $files
+  end
+  fl=$view.size
+  $sta = 0 if $sta >= fl || $sta < 0
+  $viewport = $view[$sta, $pagesize]
+  fin = $sta + $viewport.size
   #alist = index_this_list list
   #alist = columnate alist, $grows
   # NOTE XXX we are supposed to page the list with space, using pagelist
-  alist = columnate_with_indexing $list, $grows
+  alist = columnate_with_indexing $viewport, $grows
   # trying to pass populists block to listbox
-  #lb = RubyCurses::List.new form, listconfig, &block
-  lb = Cygnus::TextPad.new @form, listconfig, &block
   #lb.text(list)
   ## TODO FIXME hardocoding tmux format
   lb.formatted_text(alist, :tmux)
   #
-  @window.bkgd(Ncurses.COLOR_PAIR($reversecolor));
+  @window.bkgd(Ncurses.COLOR_PAIR($datacolor));
   @form.repaint
   Ncurses::Panel.update_panels
 
   begin
-    while((ch = @window.getchar()) != 999 )
+    #while((ch = @window.getchar()) != 999 )
+    ch = @window.getchar()
 
       # if a char range or array has been sent, check if the key is in it and send back
       # else just stay here
@@ -387,7 +403,7 @@ def full_indexed_list dir=Dir.pwd, config={}, &block
         chr = ch.chr
         ix = get_index chr
         if ix
-          file = $list[ix]
+          file = $viewport[ix]
           if file
             file = File.expand_path file
             if File.directory? file
@@ -397,7 +413,8 @@ def full_indexed_list dir=Dir.pwd, config={}, &block
             elsif File.file? file
               #return file
               pad_display_file file, DefaultFileRenderer.new
-              lb.padrefresh
+              next
+              #lb.padrefresh
             else
               alert "Some new error has crept in. Neither file not directory: (#{file})"
               $log.warn "XXXXX: FILE Neither file not directory: (#{file})"
@@ -410,9 +427,6 @@ def full_indexed_list dir=Dir.pwd, config={}, &block
 
 
       case ch
-      when -1
-        alert "does it really come here? -1 XXXXXXX"
-        next
       when ?\C-q.getbyte(0)
         break
       else
@@ -424,25 +438,26 @@ def full_indexed_list dir=Dir.pwd, config={}, &block
         end
         # close if escape or double escape
         if ch == 27 || ch == 2727
-          return nil
+          # this just closes the app ! since my finger remains on Ctrl which is Escape
         end
         #alert "got key before lb.handle #{ch.chr}"
         retval = lb.handle_key ch
         #          if retval == :UNHANDLED
         #alert "got key in unhdnalde lb.handle #{ch}, #{retval}"
-        retval = @form.handle_key ch
+        retval = @form.handle_key ch if retval == :UNHANDLED
         $log.debug "XXXX form returned #{retval}"
       end
 
       @form.repaint
-    end
+    #end # while getchar
   ensure
-    @window.destroy if destroying
+    #@window.destroy if destroying
   end
+  end # while true
   return nil
 end
 def pad_display_file filename, renderer, config={}, &block
-  require 'cygnus/textpad'
+  #require 'cygnus/textpad'
   row = config[:row] || 0
   col = config[:col] || 0
   width = config[:width] || FFI::NCurses.COLS
@@ -673,7 +688,7 @@ end
       tv.text(get_file_contents(filename))
       $viewed_file = filename
     end
-    # sets $list - i have no other way till we make this into a class
+    # sets $files - i have no other way till we make this into a class
     def display_dir
       list = get_file_list
       #alist = index_this_list list
@@ -683,7 +698,7 @@ end
       lb.title = Dir.pwd
       lb.padrefresh
       @form.repaint
-      $list = list
+      $files = list
       return list
     end
     def OLD_display_dir
@@ -762,9 +777,62 @@ end
       end
     end
     def form_bindings form
+bindings = {
+  "`"   => "main_menu",
+  "="   => "toggle_menu",
+  "!"   => "command_mode",
+  "@"   => "selection_mode_toggle",
+  "M-a" => "select_all",
+  "M-A" => "unselect_all",
+  ","   => "goto_parent_dir",
+  "+"   => "goto_dir",
+  "."   => "pop_dir",
+  ":"   => "subcommand",
+  "'"   => "goto_bookmark",
+  "/"   => "enter_regex",
+  "M-p"   => "prev_page",
+  "M-n"   => "next_page",
+  "SPACE"   => "next_page",
+  "M-f"   => "select_visited_files",
+  "M-d"   => "select_used_dirs",
+  "M-b"   => "select_bookmarks",
+  "M-m"   => "create_bookmark",
+  "M-M"   => "show_marks",
+  "C-c"   => "escape",
+  "ESCAPE"   => "escape",
+  "TAB"   => "views",
+  "C-i"   => "views",
+  "?"   => "dirtree",
+  "ENTER"   => "select_current",
+  "D"   => "delete_file",
+  "M"   => "file_actions most",
+  "Q"   => "quit_command",
+  "RIGHT"   => "column_next",
+  "LEFT"   => "column_next 1",
+  "C-x"   => "file_actions",
+  "M--"   => "columns_incdec -1",
+  "M-+"   => "columns_incdec 1",
+  "S"     =>  "command_file list y ls -lh",
+  "L"     =>  "command_file Page n less",
+  "C-d"   =>  "cursor_scroll_dn",
+  "C-b"   =>  "cursor_scroll_up",
+  "UP"   =>  "cursor_up",
+  "DOWN"   =>  "cursor_dn",
+  "C-SPACE" => "visual_mode_toggle",
+
+  "M-?"   => "print_help",
+  "F1"   => "print_help",
+  "F2"   => "child_dirs",
+  "F3"   => "dirtree",
+  "F4"   => "tree"
+
+}
       form.bind_key(?`, 'main_menu') { main_menu }
       form.bind_key(?+, 'main_menu') { goto_dir }
       form.bind_key(?\,, 'goto_parent_dir') { goto_parent_dir }
+      form.bind_key(?\M-n, 'next_page') { next_page }
+      form.bind_key(?\M-p, 'prev_page') { prev_page }
+      form.bind_key(32, 'next_page') { next_page }
     end
 include RubyCurses
 
@@ -823,7 +891,7 @@ rescue => ex
   $log.debug( ex) if ex
   $log.debug(ex.backtrace.join("\n")) if ex
 ensure
-  #@window.destroy if !@window.nil?
+  @window.destroy if !@window.nil?
   VER::stop_ncurses
   p ex if ex
   p(ex.backtrace.join("\n")) if ex
