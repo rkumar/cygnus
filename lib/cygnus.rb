@@ -122,7 +122,7 @@ def columnate_with_indexing ary, sz
       k = get_shortcut ix
       isdir = f[-1] == "/"
       fsz = f.size + k.to_s.size + 0
-      fsz = f.size + 5
+      fsz = f.size + 1
       if fsz > wid
         # truncated since longer
         f = f[0, wid-2]+"$ "
@@ -144,7 +144,10 @@ def columnate_with_indexing ary, sz
       #
       colr = "white"
       colr = "blue, bold" if isdir
-      k << " " if k.length == 1
+      # this directly modified the damned index resulting in searches failing
+      #k << " " if k.length == 1
+      k = k + " " if k.length == 1
+
       f = " #[fg=yellow, bold]#{k}#[end] #[fg=#{colr}]#{f}#[end]" 
 
       if buff[ctr]
