@@ -362,10 +362,8 @@ end
 ## accept dir to goto and change to that ( can be a file too)
 def goto_dir
   begin
-    #path = gets.chomp
     path = get_string "Enter path: "
     return if path.nil? || path == ""
-    #rescue => ex
   rescue Exception => ex
     perror "Cancelled cd, press a key"
     return
@@ -705,11 +703,16 @@ def pop_dir
   ## XXX make sure the dir exists, cuold have been deleted. can be an error or crash otherwise
   $visited_dirs.push d
   Dir.chdir d
+  display_dir
+
+  return
+  # old stuff with zsh
   $filterstr ||= "M"
   $files = `zsh -c 'print -rl -- *(#{$sorto}#{$hidden}#{$filterstr})'`.split("\n")
   post_cd
 end
-def post_cd
+# TODO
+def TODOpost_cd
   $patt=nil
   $sta = $cursor = 0
   $title = nil
@@ -989,7 +992,7 @@ end
 def screen_settings
   $glines=%x(tput lines).to_i
   $gcols=%x(tput cols).to_i
-  $grows = $glines - 3
+  $grows = $glines - 1
   $pagesize = 60
   #$gviscols = 3
   $pagesize = $grows * $gviscols
