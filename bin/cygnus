@@ -8,14 +8,17 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-15 19:21
+#  Last update: 2013-03-16 01:24
 #
 #  == CHANGES
 #  == BUGS
+#     _ show how many files 1-5 or 15 etc
+#     _ long listing toggle + other toggles
+#     x increase number of columns
 #     _ white line at bottom and right
-#     _ restrict to certain number of rows, space pages
+#     x restrict to certain number of rows, space pages
 #       this means we need to map space Alt-n etc ourselfves.
-#     _ truncation is not correct
+#     x truncation is not correct
 #     x showing file should put filename on top
 #     x when changing dirs , old crow is left, should be first, or previously used.
 #       when form triggers a key then bounds check not run. form keys are a pain with pad
@@ -427,6 +430,9 @@ def full_indexed_list dir=Dir.pwd, config={}, &block
 
 
       case ch
+      when 32, "SPACE"
+        next_page
+        next
       when ?\C-q.getbyte(0)
         break
       else
@@ -511,31 +517,6 @@ def pad_display_file filename, renderer, config={}, &block
     window.destroy  
   end
   return nil
-end
-def get_index key, vsz=999
-  # FIXME all this stuff about another key has to happen in the popup, not here
-  i = $IDX.index(key)
-  return i+$stact if i
-  #sz = $IDX.size
-  zch = nil
-  if vsz > 25
-    if key == "z" || key == "Z"
-      #print key
-      zch = get_char
-      #print zch
-      i = $IDX.index("#{key}#{zch}")
-      return i+$stact if i
-    end
-  end
-  return nil
-end
-def get_shortcut ix
-  $stact = 0
-  return "<" if ix < $stact
-  ix -= $stact
-  i = $IDX[ix]
-  return i if i
-  return "->"
 end
 def index_this_list list
   alist = []
@@ -833,6 +814,10 @@ bindings = {
       form.bind_key(?\M-n, 'next_page') { next_page }
       form.bind_key(?\M-p, 'prev_page') { prev_page }
       form.bind_key(32, 'next_page') { next_page }
+      form.bind_key(?\M--, 'decrease columns') { columns_incdec -1 }
+      form.bind_key(?\M-+, 'increase columns') { columns_incdec 1 }
+      form.bind_key(KEY_RIGHT, 'increase columns') { column_next  }
+      form.bind_key(KEY_LEFT, 'increase columns') { column_next 1  }
     end
 include RubyCurses
 
