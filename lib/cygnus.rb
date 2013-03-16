@@ -118,6 +118,8 @@ def columnate_with_indexing ary, sz
     ctr=0
     while ctr < sz
 
+      cur=SPACE
+      cur = CURMARK if ix + $sta == $cursor
       f = ary[ix]
       # be careful of modifying f or original array gets modified XXX
       k = get_shortcut ix
@@ -149,7 +151,7 @@ def columnate_with_indexing ary, sz
       #k << " " if k.length == 1
       k = k + " " if k.length == 1
 
-      f = " #[fg=yellow, bold]#{k}#[end] #[fg=#{colr}]#{f}#[end]" 
+      f = "#{cur}#[fg=yellow, bold]#{k}#[end] #[fg=#{colr}]#{f}#[end]" 
 
       if buff[ctr]
         buff[ctr] += f
@@ -351,11 +353,11 @@ end
 # I think NCurses has a refresh which when called internally results in this chap
 # getting called since both are included. or maybe App or somehting has a refresh
 def c_refresh
-  alert "c_refresh called"
-    $filterstr ||= "M"
-    $files = `zsh -c 'print -rl -- *(#{$sorto}#{$hidden}#{$filterstr})'`.split("\n")
-    $patt=nil
-    $title = nil
+  $filterstr ||= "M"
+  #$files = `zsh -c 'print -rl -- *(#{$sorto}#{$hidden}#{$filterstr})'`.split("\n")
+  $patt=nil
+  $title = nil
+  display_dir
 end
 #
 ## unselect all files
@@ -467,6 +469,7 @@ def enter_regex
   patt = get_string "Enter (regex) pattern: "
   #$patt = gets().chomp
   #$patt = Readline::readline('>', true)
+  $patt = patt
   return patt
 end
 def next_page
@@ -687,18 +690,26 @@ end
 def select_used_dirs
   $title = "Used Directories"
   $files = $used_dirs.uniq
-  show_list
+  #show_list
 end
 def select_visited_files
   # not yet a unique list, needs to be unique and have latest pushed to top
   $title = "Visited Files"
-  $files = $visited_files.uniq
-  show_list
+  files = $visited_files.uniq
+  show_list files
+  $title = nil
 end
 def select_bookmarks
   $title = "Bookmarks"
-  $files = $bookmarks.values
-  show_list
+  $files = $bookmarks.values.collect do |x| 
+    if x.include? ":"
+      ix = x.index ":"
+      x[0,ix]
+    else
+      x
+    end
+  end
+  #show_list files
 end
 
 ## part copied and changed from change_dir since we don't dir going back on top
@@ -1274,12 +1285,6 @@ def visual_block_clear
   $visual_block_start = nil
   $visual_mode = nil
 end
-def file_starting_with fc
-  ix = return_next_match(method(:file_matching?), "^#{fc}")
-  if ix
-    goto_line ix
-  end
-end
 def file_matching? file, patt
   file =~ /#{patt}/
 end
@@ -1306,8 +1311,10 @@ end
 def goto_line pos
   pages = ((pos * 1.00)/$pagesize).ceil
   pages -= 1
-  $sta = pages * $pagesize + 1
+  #$sta = pages * $pagesize + 1
+  $sta = pages * $pagesize + 0
   $cursor = pos
+  #$log.debug "XXX: GOTO_LINE #{$sta} :: #{$cursor}"
 end
 def filetype f
   return nil unless f
