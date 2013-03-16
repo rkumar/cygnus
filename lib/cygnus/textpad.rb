@@ -8,7 +8,7 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-16 12:43
+#  Last update: 2013-03-16 17:10
 #
 #  == CHANGES
 #  == TODO 
@@ -55,6 +55,11 @@ module Cygnus
       @list = []
       super
 
+      ## NOTE 
+      #  ---------------------------------------------------
+      #  Since we are using pads, you need to get your height, width and rows correct
+      #  Make sure the height factors in the row, else nothing may show
+      #  ---------------------------------------------------
       #@height = @height.ifzero(FFI::NCurses.LINES)
       #@width = @width.ifzero(FFI::NCurses.COLS)
       @rows = @height
