@@ -8,13 +8,11 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-16 01:24
+#  Last update: 2013-03-16 13:09
 #
 #  == CHANGES
 #  == BUGS
-#     _ show how many files 1-5 or 15 etc
-#     _ long listing toggle + other toggles
-#     x increase number of columns
+#     _ blank page if suppress_border true !
 #     _ white line at bottom and right
 #     x restrict to certain number of rows, space pages
 #       this means we need to map space Alt-n etc ourselfves.
@@ -27,8 +25,12 @@
 #
 #  == TODO 
 #
-#     _ columnate, fix alignment with truncating, 
-#       _ paging when more than pagesize * cols.
+#     _ name cygnus on top
+#     _ show how many files 1-5 or 15 etc
+#     _ long listing toggle + other toggles
+#     x increase number of columns
+#     x columnate, fix alignment with truncating, 
+#       x paging when more than pagesize * cols.
 #       _ need to get the keys, in fact make this the first thing on top.
 #         such as parent. pop. + etc. bookmark etc
 #     _ work on common file, so functionality of cetus can be shared easily
@@ -358,6 +360,7 @@ def full_indexed_list dir=Dir.pwd, config={}, &block
   listconfig[:width] = width
   listconfig[:height] = height
   listconfig[:name] = "fitp"
+  listconfig[:suppress_border] = true
   #listconfig[:selection_mode] ||= :single
   listconfig.merge!(config)
   listconfig.delete(:row); 
@@ -367,6 +370,9 @@ def full_indexed_list dir=Dir.pwd, config={}, &block
   $files = get_file_list(dir)
   #lb = RubyCurses::List.new form, listconfig, &block
   lb = Cygnus::TextPad.new @form, listconfig, &block
+  $grows = lb.rows
+  $gviscols ||= 3
+  $pagesize = $grows * $gviscols
 
   while true
   if $patt
@@ -834,7 +840,7 @@ begin
   #install_help_text my_help_text
 
   config_read
-  full_indexed_list Dir.pwd #, :form => @form
+  full_indexed_list Dir.pwd
   #@form = Form.new @window
   @form.bind_key(KEY_F1, 'help'){ display_app_help }
   @form.bind_key(?\M-c, 'select class') do
