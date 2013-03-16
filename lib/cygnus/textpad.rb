@@ -8,7 +8,7 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-13 16:13
+#  Last update: 2013-03-16 12:43
 #
 #  == CHANGES
 #  == TODO 
@@ -37,6 +37,7 @@ module Cygnus
 
     dsl_accessor :suppress_border
     attr_reader :current_index
+    attr_reader :rows , :cols
     # You may pass height, width, row and col for creating a window otherwise a fullscreen window
     # will be created. If you pass a window from caller then that window will be used.
     # Some keys are trapped, jkhl space, pgup, pgdown, end, home, t b
@@ -68,6 +69,11 @@ module Cygnus
         @startcol += 1
         @rows -=3  # 3 is since print_border_only reduces one from width, to check whether this is correct
         @cols -=3
+      else
+        # seeing why nothing is printing
+        @rows -=0  # 3 is since print_border_only reduces one from width, to check whether this is correct
+        ## if next is 0 then padrefresh doesn't print
+        @cols -=1
       end
       @row_offset = @col_offset = 0 if @suppress_borders
       @top = @row
