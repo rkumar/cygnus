@@ -8,7 +8,7 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-16 13:09
+#  Last update: 2013-03-16 17:26
 #
 #  == CHANGES
 #  == BUGS
@@ -321,55 +321,24 @@ end
 # pops up a list, taking a single key and returning if it is in range of 33 and 126
 def full_indexed_list dir=Dir.pwd, config={}, &block
   #require 'cygnus/textpad'
-  max_visible_items = config[:max_visible_items]
-  row = config[:row] || 0
-  col = config[:col] || 0
-  relative_to = config[:relative_to]
-  if relative_to
-    layout = relative_to.form.window.layout
-    row += layout[:top]
-    col += layout[:left]
-  end
-  config.delete :relative_to
-  #longest = list.max_by(&:length)
-  width = config[:width] || FFI::NCurses.COLS
+  config[:row] ||= 0
+  config[:col] ||= 0
+  config[:width] ||= FFI::NCurses.COLS - config[:col]
   if config[:title]
     width = config[:title].size + 2 if width < config[:title].size
   end
   height = config[:height]
   #height ||= [max_visible_items || 25, list.length+2].min 
-  height ||= FFI::NCurses.LINES 
+  height ||= FFI::NCurses.LINES - config[:row]
+  config[:height] = height
+  config[:name] = "fitp"
   #layout(1+height, width+4, row, col) 
-  layout = { :height => 0+height, :width => 0+width, :top => row, :left => col } 
-  destroying = false
-  if config[:form]
-    #form = config[:form]
-    #window = form.window
-    #config.delete :form
-    #config.delete :window
-  else
-    @window = VER::Window.new(layout)
-    @form = RubyCurses::Form.new @window
-    destroying = true
-  end
   form_bindings @form
 
 
-  listconfig = config[:listconfig] || {}
-  #listconfig[:list] = list
-  listconfig[:width] = width
-  listconfig[:height] = height
-  listconfig[:name] = "fitp"
-  listconfig[:suppress_border] = true
-  #listconfig[:selection_mode] ||= :single
-  listconfig.merge!(config)
-  listconfig.delete(:row); 
-  listconfig.delete(:col); 
-  listconfig.delete(:window); 
-  listconfig.delete(:form); 
+  #config[:suppress_border] = true
   $files = get_file_list(dir)
-  #lb = RubyCurses::List.new form, listconfig, &block
-  lb = Cygnus::TextPad.new @form, listconfig, &block
+  lb = Cygnus::TextPad.new @form, config, &block
   $grows = lb.rows
   $gviscols ||= 3
   $pagesize = $grows * $gviscols
@@ -397,7 +366,6 @@ def full_indexed_list dir=Dir.pwd, config={}, &block
   ## TODO FIXME hardocoding tmux format
   lb.formatted_text(alist, :tmux)
   #
-  @window.bkgd(Ncurses.COLOR_PAIR($datacolor));
   @form.repaint
   Ncurses::Panel.update_panels
 
@@ -576,10 +544,6 @@ end
   end
 
 
-    def file_navigator
-      file = full_indexed_list
-      open_file file if file
-    end
     ## accept a character to save this dir as a bookmark
     # Here we are saving a file as a bookmark, not a dir
     # The config file currently has a dir
@@ -684,6 +648,7 @@ end
       lb.formatted_text(alist, :tmux)
       lb.title = Dir.pwd
       lb.padrefresh
+      @header.text_center Dir.pwd
       @form.repaint
       $files = list
       return list
@@ -833,6 +798,8 @@ begin
   logfilename = File.join(ENV["LOGDIR"] || "./" ,"rbc13.log")
   $log = Logger.new(logfilename)
   $log.level = Logger::DEBUG
+  @window = VER::Window.root_window
+  @form = RubyCurses::Form.new @window
 
   catch(:close) do
   ##@window = VER::Window.root_window
@@ -840,7 +807,8 @@ begin
   #install_help_text my_help_text
 
   config_read
-  full_indexed_list Dir.pwd
+  @header = app_header "cygnus", :text_center => Dir.pwd, :text_right =>"^q Quit" , :color => :blue, :bgcolor => :black , :attr => :bold 
+  full_indexed_list Dir.pwd, :row => 1, :col => 0, :suppress_border => true
   #@form = Form.new @window
   @form.bind_key(KEY_F1, 'help'){ display_app_help }
   @form.bind_key(?\M-c, 'select class') do
@@ -878,7 +846,7 @@ begin
   #end
   end
 rescue => ex
-  textdialog ["Error in rib: #{ex} ", *ex.backtrace], :title => "Exception"
+  textdialog ["Error in cygnus: #{ex} ", *ex.backtrace], :title => "Exception"
   $log.debug( ex) if ex
   $log.debug(ex.backtrace.join("\n")) if ex
 ensure
