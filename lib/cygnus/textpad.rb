@@ -8,7 +8,7 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-16 17:10
+#  Last update: 2013-03-16 17:41
 #
 #  == CHANGES
 #  == TODO 
@@ -809,6 +809,8 @@ module Cygnus
       att = NORMAL
       #cp = $datacolor
       cp = get_color($datacolor, fg, bg)
+      ## XXX believe it or not, the next line can give you "invalid byte sequence in UTF-8
+      # even when processing filename at times.
       if text =~ /^\s*# / || text =~ /^\s*## /
         fg = :red
         #att = BOLD
