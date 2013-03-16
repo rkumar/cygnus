@@ -14,6 +14,7 @@ $bookmarks = {}
 $mode = nil
 $glines=%x(tput lines).to_i
 $gcols=%x(tput cols).to_i
+# grows depends on size of textpad @cols, not screen size, since this is no longer cli
 $grows = $glines - 2
 $pagesize = 60
 $gviscols = 3
@@ -999,8 +1000,10 @@ end
 ## check screen size and accordingly adjust some variables
 #
 def screen_settings
+  # TODO these need to become part of our new full_indexer class, not hang about separately.
   $glines=%x(tput lines).to_i
   $gcols=%x(tput cols).to_i
+  # this depends now on textpad size not screen size TODO FIXME
   $grows = $glines - 1
   $pagesize = 60
   #$gviscols = 3
