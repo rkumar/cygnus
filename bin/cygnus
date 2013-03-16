@@ -8,7 +8,7 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-16 17:26
+#  Last update: 2013-03-16 20:07
 #
 #  == CHANGES
 #  == BUGS
@@ -136,7 +136,7 @@ def padpopuplist list, config={}, &block
   #lb = Cygnus::TextPad.new form, :height => height, :width => width, :row => 0, :col => 0 , :title => "A title", :name => "popup"
   lb.text(list)
   #
-  window.bkgd(Ncurses.COLOR_PAIR($reversecolor));
+  #window.bkgd(Ncurses.COLOR_PAIR($reversecolor));
   form.repaint
   Ncurses::Panel.update_panels
   begin
@@ -266,7 +266,7 @@ def padpopup list, config={}, &block
   ## TODO FIXME hardocoding tmux format
   lb.formatted_text(list, :tmux)
   #
-  window.bkgd(Ncurses.COLOR_PAIR($reversecolor));
+  #window.bkgd(Ncurses.COLOR_PAIR($reversecolor));
   form.repaint
   Ncurses::Panel.update_panels
   if valid_keys_int.nil? && valid_keys_char.nil?
@@ -333,12 +333,12 @@ def full_indexed_list dir=Dir.pwd, config={}, &block
   config[:height] = height
   config[:name] = "fitp"
   #layout(1+height, width+4, row, col) 
-  form_bindings @form
 
 
   #config[:suppress_border] = true
   $files = get_file_list(dir)
   lb = Cygnus::TextPad.new @form, config, &block
+  form_bindings @form
   $grows = lb.rows
   $gviscols ||= 3
   $pagesize = $grows * $gviscols
@@ -365,6 +365,7 @@ def full_indexed_list dir=Dir.pwd, config={}, &block
   #lb.text(list)
   ## TODO FIXME hardocoding tmux format
   lb.formatted_text(alist, :tmux)
+  @header.text_center($title || Dir.pwd)
   #
   @form.repaint
   Ncurses::Panel.update_panels
@@ -384,14 +385,13 @@ def full_indexed_list dir=Dir.pwd, config={}, &block
           if file
             file = File.expand_path file
             if File.directory? file
-              FileUtils.chdir file
-              display_dir
+              ##FileUtils.chdir file
+              #display_dir
+              change_dir file
               next
             elsif File.file? file
-              #return file
               pad_display_file file, DefaultFileRenderer.new
               next
-              #lb.padrefresh
             else
               alert "Some new error has crept in. Neither file not directory: (#{file})"
               $log.warn "XXXXX: FILE Neither file not directory: (#{file})"
@@ -410,22 +410,26 @@ def full_indexed_list dir=Dir.pwd, config={}, &block
       when ?\C-q.getbyte(0)
         break
       else
-        if ch == 13 || ch == 10
-          return Dir.pwd
-          s = lb.current_value.to_s # .strip #if lb.selection_mode != :multiple
-          return s
-          #ch = s[0].ord
-        end
         # close if escape or double escape
         if ch == 27 || ch == 2727
           # this just closes the app ! since my finger remains on Ctrl which is Escape
+          c_refresh
+          next
         end
+        # lets check our own bindings so textpad doesn't take over
+        # Either that or check form's first
+        # but this way we can just reuse from cetus
+        retval = c_process_key ch
+        next if retval
+
+        retval = @form.handle_key ch #if retval == :UNHANDLED
+        next if retval != :UNHANDLED
+        $log.debug "XXXX form returned #{retval} for #{ch}"
         #alert "got key before lb.handle #{ch.chr}"
-        retval = lb.handle_key ch
+        retval = lb.handle_key ch  if retval.nil? || retval == :UNHANDLED
         #          if retval == :UNHANDLED
         #alert "got key in unhdnalde lb.handle #{ch}, #{retval}"
-        retval = @form.handle_key ch if retval == :UNHANDLED
-        $log.debug "XXXX form returned #{retval}"
+        $log.debug "XXXX textpad returned #{retval} for #{ch}"
       end
 
       @form.repaint
@@ -435,6 +439,26 @@ def full_indexed_list dir=Dir.pwd, config={}, &block
   end
   end # while true
   return nil
+end
+def key_down
+  $cursor += 1
+  alert "down #{$cursor}"
+end
+def key_up
+  $cursor -= 1
+end
+def c_process_key c
+  ch = keycode_tos c
+  h = @bindings
+  binding = h[ch]
+  binding = h[ch.to_sym] unless binding
+  if binding
+    if respond_to?(binding, true)
+      send(binding)
+      return true
+    end
+  end
+  return false
 end
 def pad_display_file filename, renderer, config={}, &block
   #require 'cygnus/textpad'
@@ -472,7 +496,7 @@ def pad_display_file filename, renderer, config={}, &block
   ## TODO FIXME hardocoding tmux format
   #lb.formatted_text(alist, :tmux)
   #
-  window.bkgd(Ncurses.COLOR_PAIR($reversecolor));
+  #window.bkgd(Ncurses.COLOR_PAIR($reversecolor));
   form.repaint
   Ncurses::Panel.update_panels
 
@@ -536,8 +560,8 @@ end
   #
   # this is a specfic functionthat has to be implemented separately by CLI and ncurses
   # programs
-  def show_list
-    file = indexed_list $title || "Some Files", $files
+  def show_list files=$files
+    file = indexed_list $title || "Some Files", files
     if file 
       open_file file
     end
@@ -559,11 +583,15 @@ end
         alert "Bookmark must be upper-case character or number."
       end
     end
+    def ischar ch
+      return ( ( ch >= ?a.ord && ch <= ?z.ord ) || ( ch >= ?A.ord && ch <= ?Z.ord ) )
+    end
     def goto_bookmark ch=nil
       unless ch
         #ch = get_string "Enter bookmark char: "
-        ch = @window.getchar().chr
-        return if ch.nil? || ch == ""
+        ch = @window.getchar()
+        return if ch.nil? || ch == "" || !ischar(ch)
+        ch = ch.chr
       end
       if ch =~ /^[0-9A-Z]$/
         d = $bookmarks[ch]
@@ -587,8 +615,8 @@ end
     def file_starting_with fc
       ix = return_next_match(method(:file_matching?), "^#{fc}")
       if ix
-        #alert "Got match for #{fc} : #{ix}"
-        $view.goto_line ix
+        #$view.goto_line ix
+        goto_line ix
       else
         alert "Got no match for #{fc}"
       end
@@ -598,8 +626,9 @@ end
       file =~ /#{patt}/
     end
     def filelist
-      tv = @form.by_name["dirlist"]
-      return tv.content()
+      return $files
+      #tv = @form.by_name["dirlist"]
+      #return tv.content()
     end
 
     ## generic method to take cursor to next position for a given condition
@@ -621,6 +650,7 @@ end
     @dir_stack = []
     def change_dir dir, filename=nil
       @dir_stack << Dir.pwd unless @dir_stack.include? Dir.pwd
+      $sta = $cursor = 0
       FileUtils.cd dir
       display_dir
       # TODO also position cursor on file if passed
@@ -647,6 +677,8 @@ end
       lb = @form.by_name["fitp"]
       lb.formatted_text(alist, :tmux)
       lb.title = Dir.pwd
+      $title = nil
+      $sta = $cursor = 0
       lb.padrefresh
       @header.text_center Dir.pwd
       @form.repaint
@@ -729,66 +761,73 @@ end
       end
     end
     def form_bindings form
-bindings = {
-  "`"   => "main_menu",
-  "="   => "toggle_menu",
-  "!"   => "command_mode",
-  "@"   => "selection_mode_toggle",
-  "M-a" => "select_all",
-  "M-A" => "unselect_all",
-  ","   => "goto_parent_dir",
-  "+"   => "goto_dir",
-  "."   => "pop_dir",
-  ":"   => "subcommand",
-  "'"   => "goto_bookmark",
-  "/"   => "enter_regex",
-  "M-p"   => "prev_page",
-  "M-n"   => "next_page",
-  "SPACE"   => "next_page",
-  "M-f"   => "select_visited_files",
-  "M-d"   => "select_used_dirs",
-  "M-b"   => "select_bookmarks",
-  "M-m"   => "create_bookmark",
-  "M-M"   => "show_marks",
-  "C-c"   => "escape",
-  "ESCAPE"   => "escape",
-  "TAB"   => "views",
-  "C-i"   => "views",
-  "?"   => "dirtree",
-  "ENTER"   => "select_current",
-  "D"   => "delete_file",
-  "M"   => "file_actions most",
-  "Q"   => "quit_command",
-  "RIGHT"   => "column_next",
-  "LEFT"   => "column_next 1",
-  "C-x"   => "file_actions",
-  "M--"   => "columns_incdec -1",
-  "M-+"   => "columns_incdec 1",
-  "S"     =>  "command_file list y ls -lh",
-  "L"     =>  "command_file Page n less",
-  "C-d"   =>  "cursor_scroll_dn",
-  "C-b"   =>  "cursor_scroll_up",
-  "UP"   =>  "cursor_up",
-  "DOWN"   =>  "cursor_dn",
-  "C-SPACE" => "visual_mode_toggle",
+      @bindings = {
+        "`"   => "main_menu",
+        "="   => "toggle_menu",
+        "!"   => "command_mode",
+        "@"   => "selection_mode_toggle",
+        "M-a" => "select_all",
+        "M-A" => "unselect_all",
+        ","   => "goto_parent_dir",
+        "+"   => "goto_dir",
+        "."   => "pop_dir",
+        ":"   => "subcommand",
+        "'"   => "goto_bookmark",
+        "/"   => "enter_regex",
+        "M-p"   => "prev_page",
+        "M-n"   => "next_page",
+        "SPACE"   => "next_page",
+        "M-f"   => "select_visited_files",
+        "M-d"   => "select_used_dirs",
+        "M-b"   => "select_bookmarks",
+        "M-m"   => "create_bookmark",
+        "M-M"   => "show_marks",
+        "C-c"   => "escape",
+        "esc"   => "escape",
+        "TAB"   => "views",
+        "C-i"   => "views",
+        "?"   => "dirtree",
+        "ENTER"   => "select_current",
+        "D"   => "delete_file",
+        "M"   => "file_actions most",
+        "Q"   => "quit_command",
+        "right"   => "column_next",
+        "left"   => "column_next 1",
+        "C-x"   => "file_actions",
+        "M--"   => "columns_incdec -1",
+        "M-+"   => "columns_incdec 1",
+        "S"     =>  "command_file list y ls -lh",
+        "L"     =>  "command_file Page n less",
+        "C-d"   =>  "cursor_scroll_dn",
+        "C-b"   =>  "cursor_scroll_up",
+        "up"   =>  "cursor_up",
+        "down"   =>  "cursor_dn",
+        "C-space" => "visual_mode_toggle",
 
-  "M-?"   => "print_help",
-  "F1"   => "print_help",
-  "F2"   => "child_dirs",
-  "F3"   => "dirtree",
-  "F4"   => "tree"
+        "M-?"   => "print_help",
+        "F1"   => "print_help",
+        "F2"   => "child_dirs",
+        "F3"   => "dirtree",
+        "F4"   => "tree"
 
-}
+      }
+      ## remember that widgets map keys on handle_key, as late as possible
+      # so these need to go on form not object, and form needs to be called first
+      # since we really don't care for textpads bindings
       form.bind_key(?`, 'main_menu') { main_menu }
-      form.bind_key(?+, 'main_menu') { goto_dir }
+      form.bind_key(?+, 'goto_dir') { goto_dir }
       form.bind_key(?\,, 'goto_parent_dir') { goto_parent_dir }
       form.bind_key(?\M-n, 'next_page') { next_page }
       form.bind_key(?\M-p, 'prev_page') { prev_page }
       form.bind_key(32, 'next_page') { next_page }
       form.bind_key(?\M--, 'decrease columns') { columns_incdec -1 }
       form.bind_key(?\M-+, 'increase columns') { columns_incdec 1 }
-      form.bind_key(KEY_RIGHT, 'increase columns') { column_next  }
-      form.bind_key(KEY_LEFT, 'increase columns') { column_next 1  }
+      #form.bind_key(KEY_RIGHT, 'increase columns') { column_next  }
+      #form.bind_key(KEY_LEFT, 'increase columns') { column_next 1  }
+      #form.bind_key(KEY_UP, 'up') { key_up }
+      # getting overridden by textpad
+      #form.bind_key(KEY_DOWN, 'down') { key_down }
+      form.bind_key(?/, 'ask regex') { enter_regex  }
     end
 include RubyCurses
 
@@ -807,7 +846,7 @@ begin
   #install_help_text my_help_text
 
   config_read
-  @header = app_header "cygnus", :text_center => Dir.pwd, :text_right =>"^q Quit" , :color => :blue, :bgcolor => :black , :attr => :bold 
+  @header = app_header "cygnus", :text_center => Dir.pwd, :text_right =>"^q Quit" , :color => :green, :bgcolor => :black , :attr => :bold 
   full_indexed_list Dir.pwd, :row => 1, :col => 0, :suppress_border => true
   #@form = Form.new @window
   @form.bind_key(KEY_F1, 'help'){ display_app_help }
