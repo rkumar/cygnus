@@ -8,43 +8,28 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-16 20:07
+#  Last update: 2013-03-17 19:01
 #
 #  == CHANGES
 #  == BUGS
-#     _ blank page if suppress_border true !
 #     _ white line at bottom and right
-#     x restrict to certain number of rows, space pages
-#       this means we need to map space Alt-n etc ourselfves.
-#     x truncation is not correct
-#     x showing file should put filename on top
-#     x when changing dirs , old crow is left, should be first, or previously used.
-#       when form triggers a key then bounds check not run. form keys are a pain with pad
-#       anything happening outside of here
-#     x unable to display a file with very long lines. - these were dos format with CR in it.
 #
 #  == TODO 
 #
-#     _ name cygnus on top
 #     _ show how many files 1-5 or 15 etc
 #     _ long listing toggle + other toggles
-#     x increase number of columns
-#     x columnate, fix alignment with truncating, 
-#       x paging when more than pagesize * cols.
 #       _ need to get the keys, in fact make this the first thing on top.
 #         such as parent. pop. + etc. bookmark etc
 #     _ work on common file, so functionality of cetus can be shared easily
 #     x use same keys as cetus for parent pop etc , . ' etc maybe even backtick for menu
 #     _ jump to single pane and back.
 #     _ save bookmarks
-#     x view files from z and viminfo
 #
 #
 #     when moving right, also don't pan straight away
 #     x add mappings and process key in handle_keys and other widget things
 #     x user can put text or list
 #     . handle putting data again and overwriting existing
-#     . formatted text
 #     x search and other features
 #     - can pad movement and other ops be abstracted into module for reuse
 #     / get scrolling like in vim (C-f e y b d)
@@ -58,7 +43,6 @@
 require 'rbcurse'
 require 'cygnus'
 require 'cygnus/textpad'
-require 'rbcurse/core/util/app'
 require 'fileutils'
 include Cygnus
 
@@ -344,61 +328,63 @@ def full_indexed_list dir=Dir.pwd, config={}, &block
   $pagesize = $grows * $gviscols
 
   while true
-  if $patt
-    if $ignorecase
-      $view = $files.grep(/#{$patt}/i)
-    else
-      $view = $files.grep(/#{$patt}/)
+    break if $quitting
+    if $patt
+      if $ignorecase
+        $view = $files.grep(/#{$patt}/i)
+      else
+        $view = $files.grep(/#{$patt}/)
+      end
+    else 
+      $view = $files
     end
-  else 
-    $view = $files
-  end
-  fl=$view.size
-  $sta = 0 if $sta >= fl || $sta < 0
-  $viewport = $view[$sta, $pagesize]
-  fin = $sta + $viewport.size
-  #alist = index_this_list list
-  #alist = columnate alist, $grows
-  # NOTE XXX we are supposed to page the list with space, using pagelist
-  alist = columnate_with_indexing $viewport, $grows
-  # trying to pass populists block to listbox
-  #lb.text(list)
-  ## TODO FIXME hardocoding tmux format
-  lb.formatted_text(alist, :tmux)
-  @header.text_center($title || Dir.pwd)
-  #
-  @form.repaint
-  Ncurses::Panel.update_panels
+    fl=$view.size
+    $sta = 0 if $sta >= fl || $sta < 0
+    $viewport = $view[$sta, $pagesize]
+    fin = $sta + $viewport.size
+    #alist = index_this_list list
+    #alist = columnate alist, $grows
+    # NOTE XXX we are supposed to page the list with space, using pagelist
+    alist = columnate_with_indexing $viewport, $grows
+    # trying to pass populists block to listbox
+    #lb.text(list)
+    ## TODO FIXME hardocoding tmux format
+    lb.formatted_text(alist, :tmux)
+    @header.text_center($title || Dir.pwd)
+    @header.text_right "#{$sta}, #{$cursor}"
+    #
+    @form.repaint
+    Ncurses::Panel.update_panels
 
-  begin
-    #while((ch = @window.getchar()) != 999 )
-    ch = @window.getchar()
+    begin
+      #while((ch = @window.getchar()) != 999 )
+      ch = @window.getchar()
 
       # if a char range or array has been sent, check if the key is in it and send back
       # else just stay here
-      if ( ( ch >= ?a.ord && ch <= ?z.ord ) || ( ch >= ?A.ord && ch <= ?Z.ord ) )
+      #if ( ( ch >= ?a.ord && ch <= ?z.ord ) || ( ch >= ?A.ord && ch <= ?Z.ord ) )
+      if ( ( ch >= ?a.ord && ch <= ?z.ord ) || ( ch == ?Z.ord ) )
         #alert "char got (#{ch.chr})"
         chr = ch.chr
-        ix = get_index chr
-        if ix
-          file = $viewport[ix]
-          if file
-            file = File.expand_path file
-            if File.directory? file
-              ##FileUtils.chdir file
-              #display_dir
-              change_dir file
-              next
-            elsif File.file? file
-              pad_display_file file, DefaultFileRenderer.new
-              next
-            else
-              alert "Some new error has crept in. Neither file not directory: (#{file})"
-              $log.warn "XXXXX: FILE Neither file not directory: (#{file})"
-            end
-          end
-        else
-        end
+        select_hint $viewport, chr
+        #ix = get_index chr
+        #if ix
+          #file = $viewport[ix]
+          #if file
+            #file = File.expand_path file
+            #if File.directory? file
+              #change_dir file
+              #next
+            #elsif File.file? file
+              #pad_display_file file, DefaultFileRenderer.new
+              #next
+            #else
+              #alert "Some new error has crept in. Neither file not directory: (#{file})"
+              #$log.warn "XXXXX: FILE Neither file not directory: (#{file})"
+            #end
+          #end
+        #else
+        #end
         next
       end
 
@@ -433,10 +419,10 @@ def full_indexed_list dir=Dir.pwd, config={}, &block
       end
 
       @form.repaint
-    #end # while getchar
-  ensure
-    #@window.destroy if destroying
-  end
+      #end # while getchar
+    ensure
+      #@window.destroy if destroying
+    end
   end # while true
   return nil
 end
@@ -450,6 +436,19 @@ end
 def c_process_key c
   ch = keycode_tos c
   h = @bindings
+  case ch
+  when "C-m", "13", "10"
+    ch = "ENTER"
+  when "339"
+    ch = "page_up"
+  when "338"
+    ch = "page_down"
+  when "279"
+    ch = "home"
+  when "277"
+    ch = "end"
+  end
+
   binding = h[ch]
   binding = h[ch.to_sym] unless binding
   if binding
@@ -568,21 +567,6 @@ end
   end
 
 
-    ## accept a character to save this dir as a bookmark
-    # Here we are saving a file as a bookmark, not a dir
-    # The config file currently has a dir
-    def create_bookmark
-      ch = get_string "Enter A to Z or 0-9 for bookmark: "
-      return if ch.nil? || ch == ""
-      #ch = @window.get_char
-      if ch =~ /^[0-9A-Z]$/
-        #$bookmarks[ch] = "#{Dir.pwd}:#{$cursor}"
-        $bookmarks[ch] = $current_file
-        $modified = true
-      else
-        alert "Bookmark must be upper-case character or number."
-      end
-    end
     def ischar ch
       return ( ( ch >= ?a.ord && ch <= ?z.ord ) || ( ch >= ?A.ord && ch <= ?Z.ord ) )
     end
@@ -595,17 +579,20 @@ end
       end
       if ch =~ /^[0-9A-Z]$/
         d = $bookmarks[ch]
+        # old ones imported from lyrainfo have a : and cursor position
         if d
+          if d.index ":"
+            d, filename = d.split ":"
+          end
           if File.file? d
             filename = File.basename(d)
             dir = File.dirname(d)
           else
             dir = d
-            filename = nil
           end
           change_dir dir, filename
         else
-          alert "#{ch} not a bookmark"
+          perror "#{ch} not a bookmark"
         end
       else
         # goto_entry_starting_with ch
@@ -618,7 +605,7 @@ end
         #$view.goto_line ix
         goto_line ix
       else
-        alert "Got no match for #{fc}"
+        perror "Got no match for #{fc}"
       end
     end
     def file_matching? file, patt
@@ -627,8 +614,6 @@ end
     end
     def filelist
       return $files
-      #tv = @form.by_name["dirlist"]
-      #return tv.content()
     end
 
     ## generic method to take cursor to next position for a given condition
@@ -651,10 +636,13 @@ end
     def change_dir dir, filename=nil
       @dir_stack << Dir.pwd unless @dir_stack.include? Dir.pwd
       $sta = $cursor = 0
+      if dir.index(":")
+        dir, $cursor = dir.split(":")
+      end
       FileUtils.cd dir
-      display_dir
+      display_dir filename
       # TODO also position cursor on file if passed
-      display_file filename 
+      #display_file filename 
     end
     def display_file filename
       if filename && File.exists?(filename) && !File.directory?(filename)
@@ -663,33 +651,34 @@ end
       end
       pad_display_file filename, DefaultFileRenderer.new
       return
-      tv = @form.by_name["tv"]
-      tv.title = filename
-      tv.filename(filename)
-      tv.text(get_file_contents(filename))
-      $viewed_file = filename
     end
     # sets $files - i have no other way till we make this into a class
-    def display_dir
+    # FIXME take an optional file name and position cursor on that position
+    def display_dir filename=nil
+      $sta = $cursor = 0
       list = get_file_list
+      if filename
+        ix = list.index filename
+        if ix 
+          ## FIXME sta needs to be calced based on cursor
+          $cursor = ix
+        else
+          # could be a curpos passed in, old style bookmark
+          $cursor = filename.to_i
+        end
+      end
       #alist = index_this_list list
       alist = columnate_with_indexing list, $grows
       lb = @form.by_name["fitp"]
       lb.formatted_text(alist, :tmux)
       lb.title = Dir.pwd
       $title = nil
-      $sta = $cursor = 0
       lb.padrefresh
       @header.text_center Dir.pwd
+      @header.text_right "#{$sta}, #{$cursor}"
       @form.repaint
       $files = list
       return list
-    end
-    def OLD_display_dir
-      p = @form.by_name["dirlist"]
-      p.title(File.basename(Dir.pwd))
-      text = get_file_list
-      p.text(text)
     end
     def get_file_list dir="."
       list = Dir.entries dir
@@ -804,6 +793,10 @@ end
         "down"   =>  "cursor_dn",
         "C-space" => "visual_mode_toggle",
 
+        "home"   => "goto_top",
+        "end"   => "goto_end",
+        "page_up"   => "prev_page",
+        "page_down"   => "next_page",
         "M-?"   => "print_help",
         "F1"   => "print_help",
         "F2"   => "child_dirs",
@@ -829,6 +822,14 @@ end
       #form.bind_key(KEY_DOWN, 'down') { key_down }
       form.bind_key(?/, 'ask regex') { enter_regex  }
     end
+    def goto_top
+      $sta = $cursor = 0
+    end
+    def goto_end
+      $cursor = $view.size - 1
+      # FIXME cursor should be visible, take page calc logic from zfm or lyra accounting for 1 offset
+      $sta = $cursor - $pagesize
+    end
 include RubyCurses
 
 begin
@@ -848,41 +849,19 @@ begin
   config_read
   @header = app_header "cygnus", :text_center => Dir.pwd, :text_right =>"^q Quit" , :color => :green, :bgcolor => :black , :attr => :bold 
   full_indexed_list Dir.pwd, :row => 1, :col => 0, :suppress_border => true
+  config_write if $writing
   #@form = Form.new @window
-  @form.bind_key(KEY_F1, 'help'){ display_app_help }
-  @form.bind_key(?\M-c, 'select class') do
-    ask_classes
-  end
-  @form.bind_key(?', 'select bookmark') do
-    ask_bookmark
-  end
-  @form.bind_key(?\M-d, 'View history') do
-    popup_history
-  end
-
-  #header = app_header "0.0.5", :text_center => "ri Documentation Browser", :text_right =>"" #, :color => :black, :bgcolor => :white #, :attr => :bold 
-  #r = 1; fc = 1;
-
-  # this is the old style of using a label at the screen bottom, you can use the status_line
-
-  #$message = Variable.new
-  #$message.value = "Message Comes Here"
-  #@status_line = status_line :row => Ncurses.LINES-1
-  #@status_line.command {
-    #"F1 Help | Q Quit | ? Keys | M-c Classes | M-d History | %20s" % [$message.value]
-  #}
-
-  #h = FFI::NCurses.LINES-2
-
-
-  #@form.repaint
-  #@window.wrefresh
-  #Ncurses::Panel.update_panels
-  #while((ch = @window.getchar()) != KEY_F10 )
-    #break if ch == ?Q.ord || ch == ?\C-q.getbyte(0)
-    #@form.handle_key(ch)
-    #@window.wrefresh
+  #@form.bind_key(KEY_F1, 'help'){ display_app_help }
+  #@form.bind_key(?\M-c, 'select class') do
+    #ask_classes
   #end
+  #@form.bind_key(?', 'select bookmark') do
+    #ask_bookmark
+  #end
+  #@form.bind_key(?\M-d, 'View history') do
+    #popup_history
+  #end
+
   end
 rescue => ex
   textdialog ["Error in cygnus: #{ex} ", *ex.backtrace], :title => "Exception"
