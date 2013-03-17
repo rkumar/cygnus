@@ -457,14 +457,23 @@ end
 def prev_page
   # FIXME cursor position, take logic from zfm page calc
   $sta -= $pagesize
+  $cursor = $sta
 end
-def TODOshow_marks
-  puts
-  puts "Bookmarks: "
-  $bookmarks.each_pair { |k, v| puts "#{k.ljust(7)}  =>  #{v}" }
-  puts
-  print "Enter bookmark to goto: "
-  ch = get_char
+def show_marks
+  list = []
+  $bookmarks.each_pair { |k, v| list << " #[fg=yellow, bold]#{k}#[/end] #[fg=green]#{v}#[/end]" }
+  #  s="#[fg=green]hello there#[fg=yellow, bg=black, dim]"
+  config = {}
+  longestval = $bookmarks.values.max_by(&:length)
+  config[:title] = "Bookmarks"
+  config[:width] = [longestval.length + 5, FFI::NCurses.COLS - 5].min
+  $log.debug "XXX:  LONGEST #{longestval}, #{longestval.length}"
+  ch = padpopup list, config
+  return unless ch
+  #$bookmarks.each_pair { |k, v| puts "#{k.ljust(7)}  =>  #{v}" }
+  #puts
+  #print "Enter bookmark to goto: "
+  #ch = get_char
   goto_bookmark(ch) if ch =~ /^[0-9A-Z]$/
 end
 # MENU MAIN -- keep consistent with zfm
@@ -991,7 +1000,7 @@ def ask_hint text, deflt=nil
   f = nil
   
   #ch = get_char
-  c = get_single text
+  ch = get_single text
   if ch == "ENTER" 
     return deflt
   end
@@ -1061,6 +1070,7 @@ def file_actions action=nil
     ch, menu_text = menu "File Menu for #{text}", h
     menu_text = :quit if ch == "q"
   end
+  return unless menu_text
   case menu_text.to_sym
   when :quit
   when :delete
@@ -1068,13 +1078,13 @@ def file_actions action=nil
     #print "rmtrash #{files} ?[yn]: "
     #ch = get_char
     return if ch != "y"
-    system "rmtrash #{files}"
+    c_system "rmtrash #{files}"
     c_refresh
   when :move
     #print "move #{text} to : "
     #target = gets().chomp
     #target = Readline::readline('>', true)
-    target = get_string "move #{text} to : "
+    target = get_line "move #{text} to : "
     text=File.expand_path(text)
     return if target.nil? || target == ""
     if File.directory? target
@@ -1084,7 +1094,7 @@ def file_actions action=nil
       perror "Target not a dir"
     end
   when :copy
-    target = get_string "copy #{text} to : "
+    target = get_line "copy #{text} to : "
     #target = Readline::readline('>', true)
     return if target.nil? || target == ""
     text=File.expand_path(text)
@@ -1098,7 +1108,7 @@ def file_actions action=nil
   when :chdir
     change_dir File.dirname(text)
   when :zip
-    target = get_string "Archive name: "
+    target = get_line "Archive name: "
     #target = gets().chomp
     #target = Readline::readline('>', true)
     return if target.nil? || target == ""
@@ -1107,21 +1117,22 @@ def file_actions action=nil
       if File.exists? target
         perror "Target (#{target}) exists"
       else
-        system "tar zcvf #{target} #{files}"
+        c_system "tar zcvf #{target} #{files}"
         c_refresh
       end
     end
   when :rename
-  when :most, :less, :vim
-    system "#{menu_text} #{files}"
+  when :most, :less, :vim, ENV['EDITOR']
+    c_system "#{menu_text} #{files}"
   else
     return unless menu_text
+    $log.debug "XXX:  menu_text #{menu_text.to_sym}"
     get_single "#{menu_text} #{files}"
     #pause
     #print
-    system "#{menu_text} #{files}"
-    c_refresh
+    c_system "#{menu_text} #{files}"
     pause
+    c_refresh
   end
   # remove non-existent files from select list due to move or delete or rename or whatever
   if sct > 0
