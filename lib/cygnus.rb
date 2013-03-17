@@ -1,4 +1,5 @@
 require "cygnus/version"
+require 'rbcurse/core/util/app'
 
 module Cygnus
   # Your code goes here...
@@ -221,7 +222,7 @@ end
 ## select file based on key pressed
 def select_hint view, ch
   # a to y is direct
-  # if x or z take a key IF there are those many
+  # if z or Z take a key IF there are those many
   #
   ix = get_index(ch, view.size)
   if ix
@@ -303,7 +304,7 @@ end
 #   Accepts command from user
 #   After putting readline in place of gets, pressing a C-c has a delayed effect. It goes intot
 #   exception bloack after executing other commands and still does not do the return !
-def TODOrun_command f
+def run_command f
   files=nil
   case f
   when Array
@@ -312,29 +313,30 @@ def TODOrun_command f
   when String
     files = Shellwords.escape(f)
   end
-  print "Run a command on #{files}: "
   begin
-    #Readline::HISTORY.push(*values) 
-    command = Readline::readline('>', true)
-    #command = gets().chomp
+    # TODO put all this get_line stuff into field history
+    command = get_line "Run a command on #{files}: "
     return if command.size == 0
-    print "Second part of command: "
-    #command2 = gets().chomp
-    command2 = Readline::readline('>', true)
-    puts "#{command} #{files} #{command2}"
-    system "#{command} #{files} #{command2}"
+    command2 = get_line "Second part of command: "
+    # FIXME we may need to go into cooked mode and all that for this
+    # cat and most mess with the output using system
+    c_system "#{command} #{files} #{command2}"
   rescue Exception => ex
     perror "Canceled command, (#{ex}) press a key"
     return
   end
-  begin
-  rescue Exception => ex
-  end
 
   c_refresh
-  puts "Press a key ..."
   push_used_dirs Dir.pwd
-  get_char
+end
+def c_system command
+  w = @window || @form.window
+  w.hide
+  Ncurses.endwin
+  ret = system command
+  Ncurses.refresh
+  w.show
+  return ret
 end
 
 ## clear sort order and refresh listing, used typically if you are in some view
@@ -374,7 +376,7 @@ end
 ## accept dir to goto and change to that ( can be a file too)
 def goto_dir
   begin
-    path = get_string "Enter path: "
+    path = get_line "Enter path: "
     return if path.nil? || path == ""
   rescue Exception => ex
     perror "Cancelled cd, press a key"
@@ -429,53 +431,31 @@ end
 #
 def goto_entry_starting_with fc=nil
   unless fc
-    print "Entries starting with: "
-    fc = get_char
+    fc = get_single "Entries starting with: "
+    #fc = get_char
   end
   return if fc.size != 1
   ## this is wrong and duplicates the functionality of /
   #  It shoud go to cursor of item starting with fc
   $patt = "^#{fc}"
 end
-def OLDgoto_bookmark ch=nil
-  unless ch
-    print "Enter bookmark char: "
-    ch = get_char
-  end
-  if ch =~ /^[0-9A-Z]$/
-    d = $bookmarks[ch]
-    # this is if we use zfm's bookmarks which have a position
-    # this way we leave the position as is, so it gets written back
-    nextpos = nil
-    if d
-      if d.index(":")
-        ix = d.index(":")
-        nextpos = d[ix+1..-1]
-        d = d[0,ix]
-      end
-      change_dir d, nextpos
-    else
-      perror "#{ch} not a bookmark"
-    end
-  else
-    #goto_entry_starting_with ch
-    file_starting_with ch
-  end
-end
 
 
 ## take regex from user, to run on files on screen, user can filter file names
 def enter_regex
-  patt = get_string "Enter (regex) pattern: "
+  patt = get_line "Enter (regex) pattern: "
   #$patt = gets().chomp
   #$patt = Readline::readline('>', true)
   $patt = patt
   return patt
 end
 def next_page
+  # FIXME cursor position, take logic from zfm page calc
   $sta += $pagesize
+  $cursor = $sta if $cursor < $sta
 end
 def prev_page
+  # FIXME cursor position, take logic from zfm page calc
   $sta -= $pagesize
 end
 def TODOshow_marks
@@ -650,8 +630,8 @@ def extras
     #$pagesize = 60
     $pagesize = $grows * $gviscols
   when :columns
-    print "How many columns to show: 1-6 [current #{$gviscols}]? "
-    ch = get_char
+    ch = get_single "How many columns to show: 1-6 [current #{$gviscols}]? "
+    #ch = get_char
     ch = ch.to_i
     if ch > 0 && ch < 7
       $gviscols = ch.to_i
@@ -784,8 +764,8 @@ end
 ## save dirs and files and bookmarks to a file
 def config_write
   # Putting it in a format that zfm can also read and write
-  #f1 =  File.expand_path("~/.zfminfo")
-  f1 =  File.expand_path(CONFIG_FILE)
+  f1 =  File.expand_path("~/.cygnusinfo")
+  #f1 =  File.expand_path(CONFIG_FILE)
   d = $used_dirs.join ":"
   f = $visited_files.join ":"
   File.open(f1, 'w+') do |f2|  
@@ -802,28 +782,34 @@ end
 
 ## accept a character to save this dir as a bookmark
 def create_bookmark
-  print "Enter A to Z or 0-9 for bookmark: "
-  ch = get_char
+  ch = get_single "Enter A to Z or 0-9 for bookmark: "
+  #ch = get_char
   if ch =~ /^[0-9A-Z]$/
-    $bookmarks[ch] = "#{Dir.pwd}:#{$cursor}"
+    #$bookmarks[ch] = "#{Dir.pwd}:#{$cursor}"
+    # 
+    # The significance of putting a : and not a / is that with a 
+    # : the dir will be opened with cursor on same object it was on, and not
+    # go into the dir. e.g, If bookmark is created with cursor on a dir, we don't want
+    # it to go into the dir.
+    $bookmarks[ch] = "#{Dir.pwd}:#{$view[$cursor]}"
     $modified = true
   else
     perror "Bookmark must be upper-case character or number."
   end
 end
 def subcommand
-  print "Enter command: "
   begin
+    command = get_line "Enter command: "
     #command = gets().chomp
-    command = Readline::readline('>', true)
+    #command = Readline::readline('>', true)
     return if command == ""
   rescue Exception => ex
     return
   end
   if command == "q"
     if $modified
-      print "Do you want to save bookmarks? (y/n): "
-      ch = get_char
+      ch = get_single "Do you want to save bookmarks? (y/n): "
+      #ch = get_char
       if ch == "y"
         $writing = true
         $quitting = true
@@ -844,14 +830,16 @@ def subcommand
     $writing = true if $modified
   elsif command == "p"
     system "echo $PWD | pbcopy"
-    puts "Stored PWD in clipboard (using pbcopy)"
+    get_single "Stored PWD in clipboard (using pbcopy)"
   end
 end
 def quit_command
   if $modified
-    puts "Press w to save bookmarks before quitting " if $modified
-    print "Press another q to quit "
-    ch = get_char
+    s = ""
+    s << "Press w to save bookmarks before quitting. " if $modified
+    s << "Press another q to quit "
+    ch = get_single s
+    #ch = get_char
   else
     $quitting = true
   end
@@ -923,15 +911,16 @@ end
 
 def pbold text
   #puts "#{BOLD}#{text}#{BOLD_OFF}"
-  alert text
+  get_single text, :color_pair => $reversecolor
 end
 def perror text
   ##puts "#{RED}#{text}#{CLEAR}"
   #get_char
-  alert text
+  #alert text
+  get_single text + "  Press a key...", :color_pair => $errorcolor
 end
 def pause text=" Press a key ..."
-  #print text
+  get_single text
   #get_char
 end
 ## return shortcut for an index (offset in file array)
@@ -956,9 +945,9 @@ def get_index key, vsz=999
   zch = nil
   if vsz > 25
     if key == "z" || key == "Z"
-      print key
+      #print key
       zch = get_char
-      print zch
+      #print zch
       i = $IDX.index("#{key}#{zch}")
       return i+$stact if i
     end
@@ -977,8 +966,9 @@ end
 def command_file prompt, *command
   pauseyn = command.shift
   command = command.join " "
-    print "[#{prompt}] Choose a file [#{$view[$cursor]}]: "
-    file = ask_hint $view[$cursor]
+    #print "[#{prompt}] Choose a file [#{$view[$cursor]}]: "
+    t = "[#{prompt}] Choose a file [#{$view[$cursor]}]: "
+    file = ask_hint t, $view[$cursor]
   #print "#{prompt} :: Enter file shortcut: "
   #file = ask_hint
   perror "Command Cancelled" unless file
@@ -997,9 +987,11 @@ end
 
 ## prompt user for file shortcut and return file or nil
 #
-def ask_hint deflt=nil
+def ask_hint text, deflt=nil
   f = nil
-  ch = get_char
+  
+  #ch = get_char
+  c = get_single text
   if ch == "ENTER" 
     return deflt
   end
@@ -1046,8 +1038,9 @@ def file_actions action=nil
     text = "#{sct} files"
     file = $selected_files
   else
-    print "[#{acttext}] Choose a file [#{$view[$cursor]}]: "
-    file = ask_hint $view[$cursor]
+    #print "[#{acttext}] Choose a file [#{$view[$cursor]}]: "
+    t = "[#{acttext}] Choose a file [#{$view[$cursor]}]: "
+    file = ask_hint t, $view[$cursor]
     return unless file
     text = file
   end
@@ -1071,17 +1064,19 @@ def file_actions action=nil
   case menu_text.to_sym
   when :quit
   when :delete
-    print "rmtrash #{files} ?[yn]: "
-    ch = get_char
+    ch = get_single "rmtrash #{files} ?[yn]: "
+    #print "rmtrash #{files} ?[yn]: "
+    #ch = get_char
     return if ch != "y"
     system "rmtrash #{files}"
     c_refresh
   when :move
-    print "move #{text} to : "
+    #print "move #{text} to : "
     #target = gets().chomp
-    target = Readline::readline('>', true)
+    #target = Readline::readline('>', true)
+    target = get_string "move #{text} to : "
     text=File.expand_path(text)
-    return if target == ""
+    return if target.nil? || target == ""
     if File.directory? target
       FileUtils.mv text, target
       c_refresh
@@ -1089,9 +1084,9 @@ def file_actions action=nil
       perror "Target not a dir"
     end
   when :copy
-    print "copy #{text} to : "
-    target = Readline::readline('>', true)
-    return if target == ""
+    target = get_string "copy #{text} to : "
+    #target = Readline::readline('>', true)
+    return if target.nil? || target == ""
     text=File.expand_path(text)
     target = File.basename(text) if target == "."
     if File.exists? target
@@ -1103,10 +1098,10 @@ def file_actions action=nil
   when :chdir
     change_dir File.dirname(text)
   when :zip
-    print "Archive name: "
+    target = get_string "Archive name: "
     #target = gets().chomp
-    target = Readline::readline('>', true)
-    return if target == ""
+    #target = Readline::readline('>', true)
+    return if target.nil? || target == ""
     # don't want a blank space or something screwing up
     if target && target.size > 3
       if File.exists? target
@@ -1121,9 +1116,9 @@ def file_actions action=nil
     system "#{menu_text} #{files}"
   else
     return unless menu_text
-    print "#{menu_text} #{files}"
-    pause
-    print
+    get_single "#{menu_text} #{files}"
+    #pause
+    #print
     system "#{menu_text} #{files}"
     c_refresh
     pause
@@ -1143,10 +1138,10 @@ end
 
 # bind a key to an external command wich can be then be used for files
 def bindkey_ext_command
-  print 
-  pbold "Bind a capital letter to an external command"
-  print "Enter a capital letter to bind: "
-  ch = get_char
+  #print 
+  #pbold "Bind a capital letter to an external command"
+  ch = get_single "Enter a capital letter to bind: "
+  #ch = get_char
   return if ch == "Q"
   if ch =~ /^[A-Z]$/
     print "Enter an external command to bind to #{ch}: "
@@ -1184,7 +1179,7 @@ def z_interface
   end
 end
 def ack
-  pattern = get_string "Enter a pattern to search (ack): "
+  pattern = get_line "Enter a pattern to search (ack): "
   return if pattern.nil? || pattern == ""
   $title = "Files found using 'ack' #{pattern}"
   #system("ack #{pattern}")
@@ -1198,7 +1193,7 @@ def ack
   end
 end
 def ffind
-  pattern = get_string "Enter a file name pattern to find: "
+  pattern = get_line "Enter a file name pattern to find: "
   return if pattern.nil? || pattern == ""
   $title = "Files found using 'find' #{pattern}"
   files = `find . -name '#{pattern}'`.split("\n")
@@ -1210,7 +1205,7 @@ def ffind
   end
 end
 def locate
-  pattern = get_string "Enter a file name pattern to locate: "
+  pattern = get_line "Enter a file name pattern to locate: "
   return if pattern.nil? || pattern == ""
   $title = "Files found using 'locate' #{pattern}"
   files = `locate #{pattern}`.split("\n")
@@ -1350,10 +1345,11 @@ def revert_dir_pos
   end
 end
 def newdir
-  print 
-  print "Enter directory name: "
-  str = Readline::readline('>', true)
-  return if str == ""
+  #print 
+  #print "Enter directory name: "
+  #str = Readline::readline('>', true)
+  str = get_line "Enter directory name: "
+  return if str.nil? || str == ""
   if File.exists? str
     perror "#{str} exists."
     return
@@ -1367,10 +1363,10 @@ def newdir
   end
 end
 def newfile
-  print 
-  print "Enter file name: "
-  str = Readline::readline('>', true)
-  return if str == ""
+  #print 
+  str = get_line "Enter file name: "
+  #str = Readline::readline('>', true)
+  return if str.nil? || str == ""
   system "$EDITOR #{str}"
   $visited_files.insert(0, str) if File.exists?(str)
   c_refresh
@@ -1383,8 +1379,8 @@ end
 def remove_from_list
   if $selected_files.size > 0
     sz = $selected_files.size
-    print "Remove #{sz} files from used list (y)?: "
-    ch = get_char
+    ch = get_single "Remove #{sz} files from used list (y)?: "
+    #ch = get_char
     return if ch != "y"
     $used_dirs = $used_dirs - $selected_files
     $visited_files = $visited_files - $selected_files
@@ -1392,11 +1388,11 @@ def remove_from_list
     $modified = true
     return
   end
-  print
+  #print
   ## what if selected some rows
   file = $view[$cursor]
-  print "Remove #{file} from used list (y)?: "
-  ch = get_char
+  ch = get_single "Remove #{file} from used list (y)?: "
+  #ch = get_char
   return if ch != "y"
   file = File.expand_path(file)
   if File.directory? file
@@ -1495,6 +1491,64 @@ def insert_into_list dir, file
   ix = $files.index(dir)
   raise "something wrong can find #{dir}." unless ix
   $files.insert ix, *file
+end
+#
+# prints a prompt at bottom of screen, takes a character and returns textual representation
+# of character (as per get_char) and not the int that window.getchar returns.
+# It uses a window, so underlying text is not touched.
+#
+def get_single text, config={}
+  w = one_line_window
+  x = y = 0
+  color = config[:color_pair] || $datacolor
+  color=Ncurses.COLOR_PAIR(color);
+  w.attron(color);
+  w.mvprintw(x, y, "%s" % text);
+  w.attroff(color);
+  w.wrefresh
+  Ncurses::Panel.update_panels
+  chr = get_char
+  w.destroy
+  w = nil 
+  return chr
+end
+
+# identical to get_string but does not show as a popup with buttons, just ENTER
+# This is required if there are multiple inputs required and having several get_strings
+# one after the other seems really odd due to multiple popups
+# Unlike, get_string this does not return a nil if C-c pressed. Either returns a string if 
+# ENTER pressed or a blank if C-c or Double Escape. So only blank to be checked
+def get_line text, config={}
+  begin
+    w = one_line_window
+    form = RubyCurses::Form.new w
+
+    f = Field.new form, :label => text, :row => 0, :col => 1
+    form.repaint
+    w.wrefresh
+    while((ch = w.getchar()) != FFI::NCurses::KEY_F10 )
+      break if ch == 13
+      if ch == 3 || ch == 27 || ch == 2727
+        return ""
+      end
+      begin
+        form.handle_key(ch)
+        w.wrefresh
+      rescue => err
+        $log.debug( err) if err
+        $log.debug(err.backtrace.join("\n")) if err
+        textdialog ["Error in Messagebox: #{err} ", *err.backtrace], :title => "Exception"
+        w.refresh # otherwise the window keeps showing (new FFI-ncurses issue)
+        $error_message.value = ""
+      ensure
+      end
+    end # while loop
+
+  ensure
+    w.destroy
+    w = nil 
+  end
+  return f.text
 end
 
 #run if __FILE__ == $PROGRAM_NAME
