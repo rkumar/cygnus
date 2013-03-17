@@ -8,7 +8,7 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-17 19:01
+#  Last update: 2013-03-18 01:54
 #
 #  == CHANGES
 #  == BUGS
@@ -218,6 +218,7 @@ def padpopup list, config={}, &block
     col += layout[:left]
   end
   config.delete :relative_to
+  # still has the formatting in the string so length is wrong.
   #longest = list.max_by(&:length)
   width = config[:width] || 60
   if config[:title]
@@ -339,7 +340,11 @@ def full_indexed_list dir=Dir.pwd, config={}, &block
       $view = $files
     end
     fl=$view.size
-    $sta = 0 if $sta >= fl || $sta < 0
+    $sta = 0 if $sta < 0
+    $cursor = fl -1 if $cursor >= fl
+    $cursor = 0 if $cursor < 0
+    $sta = calc_sta $cursor
+    $log.debug "XXX:   sta is #{$sta}, size is #{fl}"
     $viewport = $view[$sta, $pagesize]
     fin = $sta + $viewport.size
     #alist = index_this_list list
@@ -828,7 +833,15 @@ end
     def goto_end
       $cursor = $view.size - 1
       # FIXME cursor should be visible, take page calc logic from zfm or lyra accounting for 1 offset
-      $sta = $cursor - $pagesize
+      $sta = calc_sta $cursor
+    end
+    # calculate the starting position of the page given
+    # a line to go to
+    # check edge case of pagesize iteself 87 it should go on page2 not page 1
+    def calc_sta cur
+      pages = (cur * 1.001 / $pagesize).ceil
+      pages -= 1 if pages > 0
+      return pages * $pagesize
     end
 include RubyCurses
 
