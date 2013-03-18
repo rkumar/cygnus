@@ -8,16 +8,27 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-18 01:54
+#  Last update: 2013-03-19 01:03
 #
 #  == CHANGES
 #  == BUGS
+#     _ we have overridden textpad bindings yet they show / n gg etc.
+#       Need to write our own from the hash  bindings and add form ones to it.
+#     _ our bindings from the hash do not show up..
 #     _ white line at bottom and right
 #
 #  == TODO 
 #
 #     _ show how many files 1-5 or 15 etc
+#     _ toggle edit mode and view mode
 #     _ long listing toggle + other toggles
+#
+#        --- release first gem version after above are done ---
+#
+#       _ we can try no truncating at all, the next row will automatically truncate
+#       for first row use full length to truncated, second row use full - first row etc
+#       that way the lower rows will not get truncated, if there are some below. They
+#       can continue displaying.
 #       _ need to get the keys, in fact make this the first thing on top.
 #         such as parent. pop. + etc. bookmark etc
 #     _ work on common file, so functionality of cetus can be shared easily
@@ -688,6 +699,7 @@ end
     def get_file_list dir="."
       list = Dir.entries dir
       list.delete_at 0
+      list.reject! {|x| x[0] == "." && x[1] != "." } unless $hidden
       list.collect! do |e|
         if File.directory? e
           e << "/"
