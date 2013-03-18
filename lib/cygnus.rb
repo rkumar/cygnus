@@ -122,6 +122,24 @@ def columnate_with_indexing ary, sz
       cur=SPACE
       cur = CURMARK if ix + $sta == $cursor
       f = ary[ix]
+
+      if $long_listing
+        begin
+          # one of zsh's flags adds not just / but @ * and a space, so the a FNF error comes
+          unless File.exist? f
+            last = f[-1]
+            if last == " " || last == "@" || last == '*'
+              stat = File.stat(f.chop)
+            end
+          else
+            stat = File.stat(f)
+          end
+          f = "%10s  %s  %s" % [readable_file_size(stat.size,1), date_format(stat.mtime), f]
+        rescue Exception => e
+          f = "%10s  %s  %s" % ["?", "??????????", f]
+        end
+      end
+
       # be careful of modifying f or original array gets modified XXX
       k = get_shortcut ix
       isdir = f[-1] == "/"
@@ -246,57 +264,6 @@ def toggle_select f
     $selected_files.delete f
   else
     $selected_files.push f
-  end
-end
-## open file or directory
-def TODOopen_file f
-  return unless f
-  if f[0] == "~"
-    f = File.expand_path(f)
-  end
-  unless File.exist? f
-    # this happens if we use (T) in place of (M) 
-    # it places a space after normal files and @ and * which borks commands
-    last = f[-1]
-    if last == " " || last == "@" || last == '*'
-      f = f.chop
-    end
-  end
-  nextpos = nil
-
-  # could be a bookmark with position attached to it
-  if f.index(":")
-    f, nextpos = f.split(":")
-  end
-  if File.directory? f
-    save_dir_pos
-    change_dir f, nextpos
-  elsif File.readable? f
-    $default_command ||= "$EDITOR"
-    if !$editor_mode
-      ft = filetype f
-      if ft
-        comm = $pager_command[ft]
-      else
-        comm = $pager_command[File.extname(f)]
-        comm = $pager_command["unknown"] unless comm
-      end
-    else
-      comm = $default_command
-    end
-    comm ||= $default_command
-    if comm.index("%%")
-      comm = comm.gsub("%%", Shellwords.escape(f))
-    else
-      comm = comm + " #{Shellwords.escape(f)}"
-    end
-    system("#{comm}")
-    f = Dir.pwd + "/" + f if f[0] != '/'
-    $visited_files.insert(0, f)
-    push_used_dirs Dir.pwd
-  else
-    perror "open_file: (#{f}) not found"
-      # could check home dir or CDPATH env variable DO
   end
 end
 
@@ -498,28 +465,15 @@ def main_menu
   }
   menu "Main Menu", h
 end
-def TODOmenu title, h
-  return unless h
 
-  pbold "#{title}"
-  h.each_pair { |k, v| puts " #{k}: #{v}" }
-  ch = get_char
-  binding = h[ch]
-  binding = h[ch.to_sym] unless binding
-  if binding
-    if respond_to?(binding, true)
-      send(binding)
-    end
-  end
-  return ch, binding
-end
 def toggle_menu
   h = { :h => :toggle_hidden, :c => :toggle_case, :l => :toggle_long_list , "1" => :toggle_columns, 
   :p => :toggle_pager_mode, :e => :toggle_enhanced_list}
   ch, menu_text = menu "Toggle Menu", h
   case menu_text
   when :toggle_hidden
-    $hidden = $hidden ? nil : "D"
+    #$hidden = $hidden ? nil : "D"
+    $hidden = !$hidden 
     c_refresh
   when :toggle_case
     #$ignorecase = $ignorecase ? "" : "i"
