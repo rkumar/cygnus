@@ -8,7 +8,7 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-19 01:03
+#  Last update: 2013-03-19 10:45
 #
 #  == CHANGES
 #  == BUGS
@@ -19,6 +19,7 @@
 #
 #  == TODO 
 #
+#     _ use BS to cycle files visited as in mancurses
 #     _ show how many files 1-5 or 15 etc
 #     _ toggle edit mode and view mode
 #     _ long listing toggle + other toggles
