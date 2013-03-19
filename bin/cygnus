@@ -8,7 +8,7 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-19 19:03
+#  Last update: 2013-03-19 20:04
 #
 #  == CHANGES
 #  == BUGS
@@ -449,14 +449,25 @@ def c_process_key c
     ch = "end"
   end
 
-  binding = h[ch]
-  binding = h[ch.to_sym] unless binding
-  if binding
-    if respond_to?(binding, true)
-      send(binding)
+  x = h[ch]
+  x = h[ch.to_sym] unless x
+  x = x.split if x
+  if x
+    binding = x.shift
+    args = x
+    if binding && respond_to?(binding, true)
+      send(binding, *args)
       return true
     end
+  else
+    #perror "No binding for #{ch}"
   end
+  #if binding
+    #if respond_to?(binding, true)
+      #send(binding)
+      #return true
+    #end
+  #end
   return false
 end
 def pad_display_file filename, renderer, config={}, &block
@@ -838,6 +849,7 @@ end
         "M-+"   => "columns_incdec 1",
         "S"     =>  "command_file list y ls -lh",
         "L"     =>  "command_file Page n less",
+        "V"     =>  "command_file edit n vim",
         "C-d"   =>  "cursor_scroll_dn",
         "C-b"   =>  "cursor_scroll_up",
         "up"   =>  "cursor_up",
