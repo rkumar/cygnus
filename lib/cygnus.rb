@@ -846,7 +846,7 @@ def subcommand
     $quitting = true
     $writing = true if $modified
   elsif command == "p"
-    system "echo $PWD | pbcopy"
+    c_system "echo $PWD | pbcopy"
     get_single "Stored PWD in clipboard (using pbcopy)"
   end
 end
@@ -993,8 +993,8 @@ def command_file prompt, *command
   file = File.expand_path(file)
   if File.exists? file
     file = Shellwords.escape(file)
-    pbold "#{command} #{file} (#{pauseyn})"
-    system "#{command} #{file}"
+    pbold "#{command} #{file} (press a key)"
+    c_system "#{command} #{file}"
     pause if pauseyn == "y"
     c_refresh
   else
@@ -1386,7 +1386,7 @@ def newfile
   str = get_line "Enter file name: "
   #str = Readline::readline('>', true)
   return if str.nil? || str == ""
-  system "$EDITOR #{str}"
+  c_system "$EDITOR #{str}"
   $visited_files.insert(0, str) if File.exists?(str)
   c_refresh
 end
