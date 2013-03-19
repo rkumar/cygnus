@@ -8,13 +8,13 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-19 10:45
+#  Last update: 2013-03-19 14:02
 #
 #  == CHANGES
 #  == BUGS
-#     _ we have overridden textpad bindings yet they show / n gg etc.
-#       Need to write our own from the hash  bindings and add form ones to it.
-#     _ our bindings from the hash do not show up..
+#     x we have overridden textpad bindings yet they show / n gg etc.
+#     _ show form bindings too
+#     x our bindings from the hash do not show up..
 #     _ white line at bottom and right
 #
 #  == TODO 
@@ -384,24 +384,6 @@ def full_indexed_list dir=Dir.pwd, config={}, &block
         #alert "char got (#{ch.chr})"
         chr = ch.chr
         select_hint $viewport, chr
-        #ix = get_index chr
-        #if ix
-          #file = $viewport[ix]
-          #if file
-            #file = File.expand_path file
-            #if File.directory? file
-              #change_dir file
-              #next
-            #elsif File.file? file
-              #pad_display_file file, DefaultFileRenderer.new
-              #next
-            #else
-              #alert "Some new error has crept in. Neither file not directory: (#{file})"
-              #$log.warn "XXXXX: FILE Neither file not directory: (#{file})"
-            #end
-          #end
-        #else
-        #end
         next
       end
 
@@ -488,6 +470,11 @@ def pad_display_file filename, renderer, config={}, &block
   window = VER::Window.new(layout)
   form = RubyCurses::Form.new window
 
+  # maintain a stack of filename so we can backspace through them
+  fn = filename
+  fn = "#{Dir.pwd}/#{filename}" unless filename[0] == "/"
+  @file_stack << fn unless @file_stack.include? fn
+
   listconfig = config[:listconfig] || {}
   #listconfig[:list] = list
   listconfig[:width] = width
@@ -519,9 +506,48 @@ def pad_display_file filename, renderer, config={}, &block
   begin
     while((ch = window.getchar()) != 999 )
 
+      # we need to show bindings if user does ? or M-?
       case ch
+
+      when ?\C-j.getbyte(0), ?\C-n.getbyte(0)
+        # jump to next file so user does not need to go out and in again
+        $cursor += 1
+        if $view[$cursor]
+          _f = $view[$cursor]
+          lb.text(get_file_contents(_f))
+          lb.title(_f)
+          form.repaint
+          next
+        end
+
+      when ?\C-k.getbyte(0), ?\C-p.getbyte(0)
+        # jump to previous file so user does not need to go out and in again
+        $cursor -= 1
+        if $view[$cursor]
+          _f = $view[$cursor]
+          lb.text(get_file_contents(_f))
+          lb.title(_f)
+          form.repaint
+          next
+        end
       when ?q.getbyte(0), ?\C-q.getbyte(0), 13, 10, 27, 2727
+        # close window on q or enter or double escape
         break
+      when 127
+        # hitting backspace cycles through list of files viewed
+        # FIXME first time we have to hit BS 2 times since we get same file we are viewing
+        _f = @file_stack.pop
+        if _f
+          # push it to first
+          @file_stack.insert 0, _f
+          #lb.filename(_f)
+          lb.text(get_file_contents(_f))
+          form.repaint
+          next
+        else
+          #alert "No file to pop"
+        end
+
       else
         lb.handle_key ch
         form.repaint
@@ -650,6 +676,7 @@ end
       return ix
     end
     @dir_stack = []
+    @file_stack = []
     def change_dir dir, filename=nil
       @dir_stack << Dir.pwd unless @dir_stack.include? Dir.pwd
       $sta = $cursor = 0
@@ -724,6 +751,7 @@ end
       elsif text =~ /(archive|zip)/
         return :zip
       else
+        return :directory if File.directory? f
         return :unknown
       end
     end
@@ -748,6 +776,8 @@ end
           return t
       when :zip
         return `tar ztvf #{f}`.split("\n")
+      when :directory
+        return Dir.glob("*")
       else
         return ["unknown type", `file #{f}`]
       end
