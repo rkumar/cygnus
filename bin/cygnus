@@ -8,7 +8,7 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-19 14:02
+#  Last update: 2013-03-19 19:03
 #
 #  == CHANGES
 #  == BUGS
@@ -334,6 +334,7 @@ def full_indexed_list dir=Dir.pwd, config={}, &block
 
   #config[:suppress_border] = true
   $files = get_file_list(dir)
+  enhance_file_list
   lb = Cygnus::TextPad.new @form, config, &block
   form_bindings @form
   $grows = lb.rows
@@ -473,7 +474,8 @@ def pad_display_file filename, renderer, config={}, &block
   # maintain a stack of filename so we can backspace through them
   fn = filename
   fn = "#{Dir.pwd}/#{filename}" unless filename[0] == "/"
-  @file_stack << fn unless @file_stack.include? fn
+  #@file_stack << fn unless @file_stack.include? fn
+  $visited_files << fn unless $visited_files.include? fn
 
   listconfig = config[:listconfig] || {}
   #listconfig[:list] = list
@@ -536,10 +538,10 @@ def pad_display_file filename, renderer, config={}, &block
       when 127
         # hitting backspace cycles through list of files viewed
         # FIXME first time we have to hit BS 2 times since we get same file we are viewing
-        _f = @file_stack.pop
+        _f = $visited_files.pop
         if _f
           # push it to first
-          @file_stack.insert 0, _f
+          $visited_files.insert 0, _f
           #lb.filename(_f)
           lb.text(get_file_contents(_f))
           form.repaint
@@ -676,7 +678,6 @@ end
       return ix
     end
     @dir_stack = []
-    @file_stack = []
     def change_dir dir, filename=nil
       @dir_stack << Dir.pwd unless @dir_stack.include? Dir.pwd
       $sta = $cursor = 0
@@ -701,6 +702,8 @@ end
     def display_dir filename=nil
       $sta = $cursor = 0
       list = get_file_list
+      $files = list
+      enhance_file_list
       if filename
         ix = list.index filename
         if ix 
@@ -712,7 +715,7 @@ end
         end
       end
       #alist = index_this_list list
-      alist = columnate_with_indexing list, $grows
+      alist = columnate_with_indexing $files, $grows
       lb = @form.by_name["fitp"]
       lb.formatted_text(alist, :tmux)
       lb.title = Dir.pwd
@@ -721,8 +724,7 @@ end
       @header.text_center Dir.pwd
       @header.text_right "#{$sta}, #{$cursor}"
       @form.repaint
-      $files = list
-      return list
+      $files
     end
     def get_file_list dir="."
       list = Dir.entries dir
@@ -783,6 +785,7 @@ end
       end
     end
     def show
+      # used still ? XXX
       list = get_file_list
       ix = padpopuplist list, :title => "Files", :bgcolor => :blue, :color => :white
       return unless ix
