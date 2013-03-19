@@ -1433,13 +1433,18 @@ def enhance_file_list
   # if only one entry and its a dir
   # get its children and maybe the recent mod files a few
   
+  # zsh gives errors which stick on stdscr and don't get off!
+  # Rather than using N I'll try to convert to ruby, but then we lose
+  # similarity to cetus and its tough to redo all the sorting stuff.
   if $files.size == 1
     # its a dir, let give the next level at least
     if $files.first[-1] == "/"
       d = $files.first
-      f = `zsh -c 'print -rl -- #{d}*(omM)'`.split("\n")
+      #f = `zsh -c 'print -rl -- #{d}*(omM)'`.split("\n")
+      f = get_file_list d
       if f && f.size > 0
         $files.concat f
+        $files.concat get_important_files(d)
         return
       end
     else
@@ -1454,15 +1459,16 @@ def enhance_file_list
   if $files.index("Gemfile") || $files.grep(/\.gemspec/).size > 0
     # usually the lib dir has only one file and one dir
     flg = false
+    $files.concat get_important_files(Dir.pwd)
     if $files.index("lib/")
-      f = `zsh -c 'print -rl -- lib/*(om[1,5]M)'`.split("\n")
+      f = `zsh -c 'print -rl -- lib/*(om[1,5]MN)'`.split("\n")
       if f && f.size() > 0
         insert_into_list("lib/", f)
         flg = true
       end
       dd = File.basename(Dir.pwd)
       if f.index("lib/#{dd}/")
-        f = `zsh -c 'print -rl -- lib/#{dd}/*(om[1,5]M)'`.split("\n")
+        f = `zsh -c 'print -rl -- lib/#{dd}/*(om[1,5]MN)'`.split("\n")
         if f && f.size() > 0
           insert_into_list("lib/#{dd}/", f)
           flg = true
@@ -1470,7 +1476,7 @@ def enhance_file_list
       end
     end
     if $files.index("bin/")
-      f = `zsh -c 'print -rl -- bin/*(om[1,5]M)'`.split("\n")
+      f = `zsh -c 'print -rl -- bin/*(om[1,5]MN)'`.split("\n")
       insert_into_list("bin/", f) if f && f.size() > 0
       flg = true
     end
@@ -1482,23 +1488,23 @@ def enhance_file_list
   return if $files.size > 15
 
   ## first check accessed else modified will change accessed
-  moda = `zsh -c 'print -rn -- *(/oa[1]M)'`
+  moda = `zsh -c 'print -rn -- *(/oa[1]MN)'`
   if moda && moda != ""
-    modf = `zsh -c 'print -rn -- #{moda}*(oa[1]M)'`
+    modf = `zsh -c 'print -rn -- #{moda}*(oa[1]MN)'`
     if modf && modf != ""
       insert_into_list moda, modf
     end
-    modm = `zsh -c 'print -rn -- #{moda}*(om[1]M)'`
+    modm = `zsh -c 'print -rn -- #{moda}*(om[1]MN)'`
     if modm && modm != "" && modm != modf
       insert_into_list moda, modm
     end
   end
   ## get last modified dir
-  modm = `zsh -c 'print -rn -- *(/om[1]M)'`
+  modm = `zsh -c 'print -rn -- *(/om[1]MN)'`
   if modm != moda
-    modmf = `zsh -c 'print -rn -- #{modm}*(oa[1]M)'`
+    modmf = `zsh -c 'print -rn -- #{modm}*(oa[1]MN)'`
     insert_into_list modm, modmf
-    modmf1 = `zsh -c 'print -rn -- #{modm}*(om[1]M)'`
+    modmf1 = `zsh -c 'print -rn -- #{modm}*(om[1]MN)'`
     insert_into_list(modm, modmf1) if modmf1 != modmf
   else
     # if both are same then our options get reduced so we need to get something more
@@ -1507,9 +1513,30 @@ def enhance_file_list
   end
 end
 def insert_into_list dir, file
-  ix = $files.index(dir)
-  raise "something wrong can find #{dir}." unless ix
-  $files.insert ix, *file
+  ## earlier we were inserting these files at helpful points (before the dirs), but they are touch to find.
+  # I think it;s better to put at end
+  #ix = $files.index(dir)
+  #raise "something wrong can find #{dir}." unless ix
+  #$files.insert ix, *file
+  $files.concat file 
+end
+def get_important_files dir
+  # checks various lists like visited_files and bookmarks
+  # to see if files from this dir or below are in it.
+  # More to be used in a dir with few files.
+  list = []
+  l = dir.size + 1
+  $visited_files.each do |e|
+    if e.index(dir) == 0
+      list << e[l..-1]
+    end
+  end
+  # bookmarks have : which needs to be removed
+  #list1 = $bookmarks.values.select do |e|
+    #e.index(dir) == 0
+  #end
+  #list.concat list1
+  return list
 end
 #
 # prints a prompt at bottom of screen, takes a character and returns textual representation
