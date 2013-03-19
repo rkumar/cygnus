@@ -186,8 +186,63 @@ def columnate_with_indexing ary, sz
   end
   return buff
 end
+# print in columns
+# ary - array of data
+# sz  - lines in one column
+# This is the original which did not format or color, but since we cannot truncate unless
+# we have unformatted data i need to mix the functionality into columnate_with_indexing
+def columnate ary, sz
+  buff=Array.new
+  return buff if ary.nil? || ary.size == 0
+  
+  # determine width based on number of files to show
+  # if less than sz then 1 col and full width
+  #
+  wid = 30
+  ars = ary.size
+  ars = [$pagesize, ary.size].min
+  d = 0
+  if ars <= sz
+    wid = $gcols - d
+  else
+    tmp = (ars * 1.000/ sz).ceil
+    wid = $gcols / tmp - d
+  end
+
+  # ix refers to the index in the complete file list, wherease we only show 60 at a time
+  ix=0
+  while true
+    ## ctr refers to the index in the column
+    ctr=0
+    while ctr < sz
+
+      f = ary[ix]
+      fsz = f.size
+      if fsz > wid
+        #f = f[0, wid-2]+"$ "
+      else
+        ## we do the coloring before padding so the entire line does not get padded, only file name
+        #f = f.ljust(wid)
+        #f << " " * (wid-fsz)
+      end
+
+      if buff[ctr]
+        buff[ctr] += f
+      else
+        buff[ctr] = f
+      end
+
+      ctr+=1
+      ix+=1
+      break if ix >= ary.size
+    end
+    break if ix >= ary.size
+  end
+  return buff
+end
 ## formats the data with number, mark and details 
 def format ary
+  alert "deprecated, can be removed if not called"
   #buff = Array.new
   buff = Array.new(ary.size)
   return buff if ary.nil? || ary.size == 0
@@ -442,6 +497,27 @@ def show_marks
   #print "Enter bookmark to goto: "
   #ch = get_char
   goto_bookmark(ch) if ch =~ /^[0-9A-Z]$/
+end
+def print_help
+  h = @bindings
+  row = 1
+  list = []
+  longestval = h.values.max_by(&:length)
+  llen = longestval.length
+  # they must all be of same size so i can easily columnate
+  h.each_pair { |k, v| list << " #[fg=yellow, bold]#{k.ljust(6)}#[/end] #[fg=green]#{v.ljust(llen)}#[/end]" }
+  #  s="#[fg=green]hello there#[fg=yellow, bg=black, dim]"
+  lines = FFI::NCurses.LINES - row
+  list = columnate list, lines - 2
+  config = {}
+  config[:row] = row
+  config[:col] = 1
+  config[:title] = "Key Bindings"
+  #config[:width] = [longestval.length + 5, FFI::NCurses.COLS - 5].min
+  config[:width] = FFI::NCurses.COLS - config[:col]
+  config[:height] = lines
+  ch = padpopup list, config
+  return unless ch
 end
 # MENU MAIN -- keep consistent with zfm
 def main_menu
