@@ -195,20 +195,6 @@ def columnate ary, sz
   buff=Array.new
   return buff if ary.nil? || ary.size == 0
   
-  # determine width based on number of files to show
-  # if less than sz then 1 col and full width
-  #
-  wid = 30
-  ars = ary.size
-  ars = [$pagesize, ary.size].min
-  d = 0
-  if ars <= sz
-    wid = $gcols - d
-  else
-    tmp = (ars * 1.000/ sz).ceil
-    wid = $gcols / tmp - d
-  end
-
   # ix refers to the index in the complete file list, wherease we only show 60 at a time
   ix=0
   while true
@@ -217,14 +203,7 @@ def columnate ary, sz
     while ctr < sz
 
       f = ary[ix]
-      fsz = f.size
-      if fsz > wid
-        #f = f[0, wid-2]+"$ "
-      else
-        ## we do the coloring before padding so the entire line does not get padded, only file name
-        #f = f.ljust(wid)
-        #f << " " * (wid-fsz)
-      end
+      # deleted truncate and pad part since we expect cols to be sized same
 
       if buff[ctr]
         buff[ctr] += f
@@ -506,7 +485,6 @@ def print_help
   llen = longestval.length
   # they must all be of same size so i can easily columnate
   h.each_pair { |k, v| list << " #[fg=yellow, bold]#{k.ljust(6)}#[/end] #[fg=green]#{v.ljust(llen)}#[/end]" }
-  #  s="#[fg=green]hello there#[fg=yellow, bg=black, dim]"
   lines = FFI::NCurses.LINES - row
   list = columnate list, lines - 2
   config = {}
