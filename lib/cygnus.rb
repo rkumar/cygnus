@@ -1344,8 +1344,10 @@ def filetype f
     return :image
   elsif s.index "data"
     return :text
+  else
+    return :directory if File.directory? f
   end
-  nil
+  return :unknown
 end
 
 def save_dir_pos 
