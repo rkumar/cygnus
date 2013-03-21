@@ -8,7 +8,7 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-19 20:04
+#  Last update: 2013-03-21 13:39
 #
 #  == CHANGES
 #  == BUGS
@@ -16,13 +16,16 @@
 #     _ show form bindings too
 #     x our bindings from the hash do not show up..
 #     _ white line at bottom and right
+#     _ XXX standardize textpad based on textview
+#     _ do some things go from here to some comman like rdialog.rb?
+#       get_single etc, menus full_indexing ? or dir stuff ?
 #
 #  == TODO 
 #
-#     _ use BS to cycle files visited as in mancurses
+#     x use BS to cycle files visited as in mancurses
 #     _ show how many files 1-5 or 15 etc
 #     _ toggle edit mode and view mode
-#     _ long listing toggle + other toggles
+#     x long listing toggle + other toggles
 #
 #        --- release first gem version after above are done ---
 #
@@ -496,7 +499,7 @@ def pad_display_file filename, renderer, config={}, &block
   listconfig.merge!(config)
   listconfig.delete(:row); 
   listconfig.delete(:col); 
-  listconfig[:filename] = filename
+  #listconfig[:filename] = filename
   listconfig[:title] = filename
   listconfig[:row] = 0
   listconfig[:col] = 0
@@ -508,6 +511,7 @@ def pad_display_file filename, renderer, config={}, &block
   #lb = RubyCurses::List.new form, listconfig, &block
   lb = Cygnus::TextPad.new form, listconfig, &block
   lb.renderer renderer if renderer
+  lb.filename(filename, method(:get_file_contents))
   #lb.text(list)
   ## TODO FIXME hardocoding tmux format
   #lb.formatted_text(alist, :tmux)
@@ -756,19 +760,10 @@ end
       FileUtils.cd d
       display_dir
     end
-    def filetype f
-      text = `file #{f}`
-      if text.include? "text"
-        return :html if text.include?("HTML")
-        return :text
-      elsif text =~ /(archive|zip)/
-        return :zip
-      else
-        return :directory if File.directory? f
-        return :unknown
-      end
-    end
     def get_file_contents f
+      # escaping required for sending file name to shell command if there are spaces in file name
+      sf = Shellwords.escape(f)
+
       ft = filetype f
       case ft
       when :text
@@ -782,17 +777,17 @@ end
         end
         return lines
       when :html
-          t = `html2text #{f} 2>&1`.split "\n"
+          t = `html2text #{sf} 2>&1`.split "\n"
           if t.first.include? "command not found"
             return File.open(f,"r").readlines
           end
           return t
       when :zip
-        return `tar ztvf #{f}`.split("\n")
+        return `tar ztvf #{sf}`.split("\n")
       when :directory
         return Dir.glob("*")
       else
-        return ["unknown type", `file #{f}`]
+        return ["unhandled type", `file #{sf}`]
       end
     end
     def show
