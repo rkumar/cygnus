@@ -1520,7 +1520,7 @@ def insert_into_list dir, file
   #ix = $files.index(dir)
   #raise "something wrong can find #{dir}." unless ix
   #$files.insert ix, *file
-  $files.concat file 
+  $files.push *file 
 end
 def get_important_files dir
   # checks various lists like visited_files and bookmarks
