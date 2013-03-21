@@ -8,7 +8,7 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-16 17:41
+#  Last update: 2013-03-21 14:10
 #
 #  == CHANGES
 #  == TODO 
@@ -36,6 +36,7 @@ module Cygnus
     include BorderTitle
 
     dsl_accessor :suppress_border
+    dsl_accessor :print_footer
     attr_reader :current_index
     attr_reader :rows , :cols
     # You may pass height, width, row and col for creating a window otherwise a fullscreen window
@@ -178,15 +179,23 @@ module Cygnus
 
     # supply a filename as source for textpad
     # Reads up file into @content
-
-    def filename(filename)
+    # One can optionally send in a method which takes a filename and returns an array of data
+    # This is required if you are processing files which are binary such as zip/archives and wish
+    # to print the contents. (e.g. cygnus gem sends in :get_file_contents).
+    #      filename("a.c", method(:get_file_contents))
+    #
+    def filename(filename, reader=nil)
       @file = filename
       unless File.exists? filename
         alert "#{filename} does not exist"
         return
       end
       @filetype = File.extname filename
-      @content = File.open(filename,"r").readlines
+      if reader
+        @content = reader.call(filename)
+      else
+        @content = File.open(filename,"r").readlines
+      end
       if @filetype == ""
         if @content.first.index("ruby")
           @filetype = ".rb"
@@ -201,17 +210,29 @@ module Cygnus
     # This will replace existing text
 
     ## XXX in list text returns the selected row, list returns the full thing, keep consistent
-    def text lines
-      raise "text() receiving null content" unless lines
+    def text(lines)
+      #raise "text() receiving null content" unless lines
+      return @content if lines.empty?
       @content = lines
       @_populate_needed = true
       @repaint_all = true
       init_vars
+      self
     end
     alias :list :text
     def content
       raise "content is nil " unless @content
       return @content
+    end
+    alias :get_content :content
+
+    # print footer containing line and position
+    def print_foot #:nodoc:
+      @footer_attrib ||= Ncurses::A_REVERSE
+      footer = "R: #{@current_index+1}, C: #{@curpos+@pcol}, #{@list.length} lines  "
+      $log.debug " print_foot calling printstring with #{@row} + #{@height} -1, #{@col}+2"
+      @graphic.printstring( @row + @height -1 , @col+2, footer, @color_pair || $datacolor, @footer_attrib) 
+      @repaint_footer_required = false # 2010-01-23 22:55 
     end
 
     ## ---- the next 2 methods deal with printing chunks
@@ -255,6 +276,8 @@ module Cygnus
       end
     end
 
+    # 
+    # pass in formatted text along with parser (:tmux or :ansi)
     def formatted_text text, fmt
       require 'rbcurse/core/include/chunk'
       @formatted_text = text
@@ -326,6 +349,10 @@ module Cygnus
           #@window.print_border @top, @left, @height-1, @width, clr
           @window.print_border_only @top, @left, @height-1, @width, clr
           print_title
+
+          @repaint_footer_required = true if @oldrow != @current_index 
+          print_foot if @print_footer && !@suppress_borders && @repaint_footer_required
+
           @window.wrefresh
         end
       end
@@ -362,6 +389,9 @@ module Cygnus
       bind_key(?M, :middle_of_window)
       bind_key(?H, :top_of_window)
       bind_key(?w, :forward_word)
+      bind_key(?l, :cursor_forward)
+      bind_key(?h, :cursor_backward)
+      bind_key(?$, :cursor_eol)
       bind_key(KEY_ENTER, :fire_action_event)
     end
 
@@ -513,46 +543,20 @@ module Cygnus
     #
     #
     #
-    # NOTE : if advancing pcol one has to clear the pad or something or else 
-    # there'll be older content on the right side.
     #
     def handle_key ch
       return :UNHANDLED unless @content
       map_keys unless @mapped_keys
 
-      @maxrow = @content_rows - @rows
-      @maxcol = @content_cols - @cols 
 
-      # need to understand the above line, can go below zero.
-      # all this seems to work fine in padreader.rb in util.
-      # somehow maxcol going to -33
       @oldrow = @prow
       @oldcol = @pcol
       $log.debug "XXX: PAD got #{ch} prow = #{@prow}"
       begin
         case ch
-        when key(?l)
-          # TODO take multipler
-          #@pcol += 1
-          if @curpos < @cols
-            @curpos += 1
-          end
-        when key(?$)
-          #@pcol = @maxcol - 1
-          @curpos = [@content[@current_index].size, @cols].min
-        when key(?h)
-          # TODO take multipler
-          if @curpos > 0
-            @curpos -= 1
-          end
-        #when key(?0)
-          #@curpos = 0
       when ?0.getbyte(0)..?9.getbyte(0)
         if ch == ?0.getbyte(0) && $multiplier == 0
-          # copy of C-a - start of line
-          @repaint_required = true if @pcol > 0 # tried other things but did not work
-          @pcol = 0
-          @curpos = 0
+          cursor_bol
           return 0
         end
         # storing digits entered so we can multiply motion actions
@@ -584,7 +588,7 @@ module Cygnus
           return :UNHANDLED if ret == :UNHANDLED
         end
       rescue => err
-        $log.error " TEXTPAD ERROR 111 #{err} "
+        $log.error " TEXTPAD ERROR 591 #{err} "
         $log.debug( err) if err
         $log.debug(err.backtrace.join("\n")) if err
         textdialog ["Error in TextPad: #{err} ", *err.backtrace], :title => "Exception"
@@ -595,16 +599,25 @@ module Cygnus
       end
       return 0
     end # while loop
+
+    #
+    # event when user hits enter on a row, user would bind :PRESS
+    #
     def fire_action_event
       return if @content.nil? || @content.size == 0
       require 'rbcurse/core/include/ractionevent'
       aev = TextActionEvent.new self, :PRESS, current_value().to_s, @current_index, @curpos
       fire_handler :PRESS, aev
     end
+    #
+    # returns current value (what cursor is on)
     def current_value
       @content[@current_index]
     end
     # 
+    # execute binding when a row is entered, used more in lists to display some text
+    # in a header or footer as one traverses
+    #
     def on_enter_row arow
       return if @content.nil? || @content.size == 0
       require 'rbcurse/core/include/ractionevent'
@@ -623,16 +636,22 @@ module Cygnus
       FFI::NCurses.delwin(@pad) if @pad # when do i do this ? FIXME
       @pad = nil
     end
+    # 
+    # return true if the given row is visible
     def is_visible? index
       j = index - @prow #@toprow
       j >= 0 && j <= @scrollatrows
     end
+    #
+    # called when this widget is entered, by form
     def on_enter
       set_form_row
     end
+    # called by form
     def set_form_row
       setrowcol @lastrow, @lastcol
     end
+    # called by form
     def set_form_col
     end
 
@@ -648,15 +667,6 @@ module Cygnus
       @current_index = @content.count()-1 if @current_index > @content.count()-1
       ensure_visible
 
-      #$status_message.value = "visible #{@prow} , #{@current_index} "
-      #unless is_visible? @current_index
-        #if @prow > @current_index
-          ##$status_message.value = "1 #{@prow} > #{@current_index} "
-          #@prow -= 1
-        #else
-        #end
-      #end
-      #end
       check_prow
       #$log.debug "XXX: PAD BOUNDS ci:#{@current_index} , old #{@oldrow},pr #{@prow}, max #{@maxrow} pcol #{@pcol} maxcol #{@maxcol}"
       @crow = @current_index + r - @prow
@@ -674,14 +684,16 @@ module Cygnus
         @repaint_required = true
       end
     end
+    # 
+    # save last cursor position so when reentering, cursor can be repositioned
     def lastcurpos r,c
       @lastrow = r
       @lastcol = c
     end
 
 
-  # check that prow and pcol are within bounds
-
+    # check that prow and pcol are within bounds
+    #
     def check_prow
       @prow = 0 if @prow < 0
       @pcol = 0 if @pcol < 0
@@ -700,17 +712,13 @@ module Cygnus
       # the pad shows earlier stuff.
       # 
       return
-      # the following was causing bugs if content was smaller than pad
-      if @prow > @maxrow-1
-        @prow = @maxrow-1
-      end
-      if @pcol > @maxcol-1
-        @pcol = @maxcol-1
-      end
     end
     public
     ## 
     # Ask user for string to search for
+    # This uses the dialog, but what if user wants the old style.
+    # Isn't there a cleaner way to let user override style, or allow user
+    # to use own UI for getting pattern and then passing here.
     def ask_search
       str = get_string("Enter pattern: ")
       return if str.nil? 
@@ -768,6 +776,9 @@ module Cygnus
           @prow = @current_index
       end
     end
+    #
+    # jumps cursor to next work, like vim's w key
+    #
     def forward_word
       $multiplier = 1 if !$multiplier || $multiplier == 0
       line = @current_index
@@ -793,10 +804,45 @@ module Cygnus
       @current_index = line
       @curpos = pos
       ensure_visible
-      #@buffer = @list[@current_index].to_s
-      #set_form_row
-      #set_form_col pos
       @repaint_required = true
+    end
+    #
+    # move cursor forward by one char (currently will not pan)
+    def cursor_forward
+      $multiplier = 1 if $multiplier == 0
+      if @curpos < @cols
+        @curpos += $multiplier
+        if @curpos > @cols
+          @curpos = @cols
+        end
+        @repaint_required = true
+      end
+      $multiplier = 0
+    end
+    #
+    # move cursor backward by one char (currently will not pan)
+    def cursor_backward
+      $multiplier = 1 if $multiplier == 0
+      if @curpos > 0
+        @curpos -= $multiplier
+        @curpos = 0 if @curpos < 0
+        @repaint_required = true
+      end
+      $multiplier = 0
+    end
+    # moves cursor to end of line also panning window if necessary
+    def cursor_eol
+      @pcol = @content_cols - @cols - 1
+      @curpos = @content[@current_index].size
+      @repaint_required = true
+    end
+    # 
+    # moves cursor to start of line, panning if required
+    def cursor_bol
+      # copy of C-a - start of line
+      @repaint_required = true if @pcol > 0
+      @pcol = 0
+      @curpos = 0
     end
 
   end  # class textpad
@@ -810,7 +856,7 @@ module Cygnus
       #cp = $datacolor
       cp = get_color($datacolor, fg, bg)
       ## XXX believe it or not, the next line can give you "invalid byte sequence in UTF-8
-      # even when processing filename at times.
+      # even when processing filename at times. Or if its an mp3 or non-text file.
       if text =~ /^\s*# / || text =~ /^\s*## /
         fg = :red
         #att = BOLD
