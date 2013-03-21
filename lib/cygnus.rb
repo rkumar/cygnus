@@ -1522,15 +1522,24 @@ def insert_into_list dir, file
   #$files.insert ix, *file
   $files.push *file 
 end
+
+# checks various lists like visited_files and bookmarks
+# to see if files from this dir or below are in it.
+# More to be used in a dir with few files.
 def get_important_files dir
-  # checks various lists like visited_files and bookmarks
-  # to see if files from this dir or below are in it.
-  # More to be used in a dir with few files.
   list = []
   l = dir.size + 1
-  $visited_files.each do |e|
+  s = nil
+  ($visited_files + $bookmarks.values).each do |e|
     if e.index(dir) == 0
-      list << e[l..-1]
+      #list << e[l..-1]
+      s =  e[l..-1]
+      next unless s
+      if s.index ":"
+        s = s[0, s.index(":")] + "/"
+      end
+      # only insert if the file is in a deeper dir, otherwise we'll be duplicating files from this folder
+      list << s if s.index "/"
     end
   end
   # bookmarks have : which needs to be removed
