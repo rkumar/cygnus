@@ -8,7 +8,7 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-21 13:39
+#  Last update: 2013-03-22 00:32
 #
 #  == CHANGES
 #  == BUGS
@@ -184,7 +184,6 @@ def main_menu
     :B => :bindkey_ext_command,
     :M => :newdir,
     "%" => :newfile,
-    :X => :file_navigator,
     :x => :extras
   }
   ch, binding = menu "Main Menu", h
@@ -259,10 +258,7 @@ def padpopup list, config={}, &block
   listconfig.delete(:row); 
   listconfig.delete(:col); 
   # trying to pass populists block to listbox
-  #lb = RubyCurses::List.new form, listconfig, &block
   lb = Cygnus::TextPad.new form, listconfig, &block
-  #lb = Cygnus::TextPad.new form, :height => height, :width => width, :row => 0, :col => 0 , :title => "A title", :name => "popup"
-  #lb.text(list)
   ## TODO FIXME hardocoding tmux format
   lb.formatted_text(list, :tmux)
   #
@@ -372,7 +368,8 @@ def full_indexed_list dir=Dir.pwd, config={}, &block
     ## TODO FIXME hardocoding tmux format
     lb.formatted_text(alist, :tmux)
     @header.text_center($title || Dir.pwd)
-    @header.text_right "#{$sta}, #{$cursor}"
+    #@header.text_right "#{$sta}, #{$cursor}"
+    @header.text_right "#{$sta+1} to #{fin} of #{fl}"
     #
     @form.repaint
     Ncurses::Panel.update_panels
@@ -913,7 +910,7 @@ begin
   #install_help_text my_help_text
 
   config_read
-  @header = app_header "cygnus", :text_center => Dir.pwd, :text_right =>"^q Quit" , :color => :green, :bgcolor => :black , :attr => :bold 
+  @header = app_header "M-? Help ` Menu", :text_center => Dir.pwd, :text_right =>"^q Quit" , :color => :green, :bgcolor => :black , :attr => :bold 
   full_indexed_list Dir.pwd, :row => 1, :col => 0, :suppress_border => true
   config_write if $writing
   #@form = Form.new @window
