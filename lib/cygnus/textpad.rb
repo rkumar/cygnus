@@ -8,7 +8,7 @@
 #       Author: rkumar http://github.com/rkumar/mancurses/
 #         Date: 2011-11-09 - 16:59
 #      License: Same as Ruby's License (http://www.ruby-lang.org/LICENSE.txt)
-#  Last update: 2013-03-21 14:10
+#  Last update: 2013-03-21 14:29
 #
 #  == CHANGES
 #  == TODO 
@@ -831,7 +831,11 @@ module Cygnus
       $multiplier = 0
     end
     # moves cursor to end of line also panning window if necessary
+    # NOTE: if one line on another page (not displayed) is way longer than any
+    # displayed line, then this will pan way ahead, so may not be very intelligent
+    # in such situations.
     def cursor_eol
+      # pcol is based on max length not current line's length
       @pcol = @content_cols - @cols - 1
       @curpos = @content[@current_index].size
       @repaint_required = true
